@@ -138,6 +138,17 @@ async def handle_chat_data(request: Request, protocol: str = Query('data')):
     return response
 
 
+
+@app.post("/api/completion")
+async def handle_chat_completion(request: Request, protocol: str = Query('data')):
+    messages = request.messages
+    openai_messages = convert_to_openai_messages(messages)
+
+    response = StreamingResponse(stream_text(openai_messages, protocol))
+    response.headers['x-vercel-ai-data-stream'] = 'v1'
+    return response
+
+
 @app.post("/api/auth/session")
 async def auth():
     return RedirectResponse(url="https://accounts.google.com/o/oauth2/auth?client_id={}&redirect_uri=http://localhost:8000/api/auth/callback&response_type=code&scope=https://www.googleapis.com/auth/userinfo.email".format(os.environ.get("GOOGLE_CLIENT_ID")))
