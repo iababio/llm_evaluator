@@ -8,7 +8,7 @@ import { useTranslation } from "next-i18next";
 import {
 	generateRandomString,
 	programmingLanguages,
-} from "@/utils/app/codeblock";
+} from "../../utils/app/codeblock";
 
 interface Props {
 	language: string;

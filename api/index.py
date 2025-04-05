@@ -138,11 +138,20 @@ async def handle_chat_data(request: Request, protocol: str = Query('data')):
     return response
 
 
+class CompletionRequest(BaseModel):
+    prompt: str = None
+    messages: List[ClientMessage] = None
 
 @app.post("/api/completion")
-async def handle_chat_completion(request: Request, protocol: str = Query('data')):
-    messages = request.messages
-    openai_messages = convert_to_openai_messages(messages)
+async def handle_chat_completion(request: CompletionRequest, protocol: str = Query('data')):
+    # Handle both prompt-based and message-based requests
+    if request.prompt:
+        # Convert prompt to messages format
+        openai_messages = [{"role": "user", "content": request.prompt}]
+    elif request.messages:
+        openai_messages = convert_to_openai_messages(request.messages)
+    else:
+        return {"detail": "Either prompt or messages must be provided"}
 
     response = StreamingResponse(stream_text(openai_messages, protocol))
     response.headers['x-vercel-ai-data-stream'] = 'v1'

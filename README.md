@@ -1,41 +1,36 @@
-# AI SDK, Next.js, and FastAPI Examples
+This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
-These examples show you how to use the [AI SDK](https://sdk.vercel.ai/docs) with [Next.js](https://nextjs.org) and [FastAPI](https://fastapi.tiangolo.com).
+## Getting Started
 
-## How to use
-
-Execute [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app) with [npm](https://docs.npmjs.com/cli/init), [Yarn](https://yarnpkg.com/lang/en/docs/cli/create/), or [pnpm](https://pnpm.io) to bootstrap the example:
+First, run the development server:
 
 ```bash
-npx create-next-app --example https://github.com/vercel/ai/tree/main/examples/next-fastapi next-fastapi-app
+npm run dev
+# or
+yarn dev
+# or
+pnpm dev
+# or
+bun dev
 ```
 
-```bash
-yarn create next-app --example https://github.com/vercel/ai/tree/main/examples/next-fastapi next-fastapi-app
-```
+Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-```bash
-pnpm create next-app --example https://github.com/vercel/ai/tree/main/examples/next-fastapi next-fastapi-app
-```
+You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
-You will also need [Python 3.6+](https://www.python.org/downloads) and [virtualenv](https://virtualenv.pypa.io/en/latest/installation.html) installed to run the FastAPI server.
-
-To run the example locally you need to:
-
-1. Sign up at [OpenAI's Developer Platform](https://platform.openai.com/signup).
-2. Go to [OpenAI's dashboard](https://platform.openai.com/account/api-keys) and create an API KEY.
-3. Set the required environment variables as shown in [the example env file](./.env.local.example) but in a new file called `.env.local`.
-4. `virtualenv venv` to create a python virtual environment.
-5. `source venv/bin/activate` to activate the python virtual environment.
-6. `pip install -r requirements.txt` to install the required python dependencies.
-7. `pnpm install` to install the required dependencies.
-8. `pnpm dev` to launch the development server.
+This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
 ## Learn More
 
-To learn more about the AI SDK, Next.js, and FastAPI take a look at the following resources:
+To learn more about Next.js, take a look at the following resources:
 
-- [AI SDK Docs](https://sdk.vercel.ai/docs) - view documentation and reference for the AI SDK.
-- [Vercel AI Playground](https://play.vercel.ai) - try different models and choose the best one for your use case.
-- [Next.js Docs](https://nextjs.org/docs) - learn about Next.js features and API.
-- [FastAPI Docs](https://fastapi.tiangolo.com) - learn about FastAPI features and API.
+- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
+- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+
+You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+
+## Deploy on Vercel
+
+The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+
+Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
