@@ -3,21 +3,23 @@ import dynamic from "next/dynamic";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css";
-import { CodeBlock } from "@/components/markdown/code-block";
+import { CodeBlock } from "./code-block";
 import remarkGfm from "remark-gfm";
 import type { Options } from "react-markdown";
+import Image from "next/image"; // Import Next.js Image component
 
-// Dynamically import ReactMarkdown to avoid CommonJS/ESM conflicts
 const ReactMarkdown = dynamic(() => import("react-markdown"), {
   ssr: false,
 });
 
-// Create a memoized version of ReactMarkdown
+// Fix 1: Add display name to the memoized component
 export const EnhancedReactMarkdown: FC<Options> = memo(
   (props) => <ReactMarkdown {...props} />,
   (prevProps: Readonly<Options>, nextProps: Readonly<Options>) =>
     prevProps.children === nextProps.children
 );
+// Add display name
+EnhancedReactMarkdown.displayName = 'EnhancedReactMarkdown';
 
 interface MathComponentProps extends React.HTMLAttributes<HTMLDivElement> {
 	value?: string;
@@ -25,17 +27,13 @@ interface MathComponentProps extends React.HTMLAttributes<HTMLDivElement> {
 }
 
 const normalizeUrl = (url: string) => {
-	// Remove any spaces in the URL
 	const cleanUrl = url.replace(/\s+/g, "");
 
-	// Return the cleaned URL
 	return cleanUrl;
 };
 
-// Function to validate URLs
 const isValidUrl = (url: string) => {
 	try {
-		// Extract URL from markdown format if present
 		let testUrl = url;
 		const markdownLinkRegex = /\[.*?\]\((.*?)\)/;
 		const markdownMatch = url.match(markdownLinkRegex);
@@ -50,14 +48,11 @@ const isValidUrl = (url: string) => {
 	}
 };
 
-// Function to clean and handle links specifically from responses
 const processLinks = (text: string) => {
 	const urlRegex = /\[(.*?)\]\((.*?)\)/g;
 	return text.replace(urlRegex, (match, linkText, url) => {
-		// Normalize URL to remove spaces
 		const normalizedUrl = normalizeUrl(url);
 
-		// Check if the URL is valid
 		if (!isValidUrl(normalizedUrl)) {
 			console.warn(`Invalid URL: ${normalizedUrl}`);
 			return `[${linkText}](${normalizedUrl} "Invalid URL - Please check.")`;
@@ -68,11 +63,9 @@ const processLinks = (text: string) => {
 };
 
 const fixSpacedUrl = (text: string) => {
-	// Match markdown links: [text](url)
 	const spacedLinkRegex = /\[\s*([^\]]+?)\s*\]\s*\(\s*([^\)]+?)\s*\)/g;
 
 	return text.replace(spacedLinkRegex, (match, linkText, url) => {
-		// Clean up spaces only around the URL part, not the link text
 		const fixedLinkText = linkText.replace(/\s+/g, ""); // Remove spaces from link text (if any)
 		const fixedUrl = url.replace(/\s+/g, ""); // Remove spaces from the URL part
 
@@ -81,14 +74,12 @@ const fixSpacedUrl = (text: string) => {
 };
 
 const preprocessLaTeX = (content: string) => {
-	// Replace block-level LaTeX delimiters \[ \] with $$ $$
 	const blockRegex = /\\\[([\s\S]*?)\\\]/g;
 	const blockProcessedContent = content.replace(
 	  blockRegex,
 	  (_, equation) => `$$${equation}$$`
 	);
   
-	// Replace inline LaTeX delimiters \( \) with $ $
 	const inlineRegex = /\\\(([\s\S]*?)\\\)/g;
 	const inlineProcessedContent = blockProcessedContent.replace(
 	  inlineRegex,
@@ -99,12 +90,9 @@ const preprocessLaTeX = (content: string) => {
 };
 	
 
-// Update the preprocessContent function
 const preprocessContent = (text: string) => {
-	// First, fix any spaced URLs in the content
 	const spaceCorrectedText = fixSpacedUrl(text);
 
-	// Then process links normally (to validate them)
 	const linksCorrectedText = processLinks(spaceCorrectedText);
 
 	const processedText = preprocessLaTeX(linksCorrectedText);
@@ -229,17 +217,26 @@ const MarkdownDisplay: React.FC<{ content: string }> = ({ content }) => {
 			);
 		},
 		img: ({
-			children,
+			src,
+			alt = "Markdown image", // Fix 3: Provide default alt text
 			...props
 		}: React.ImgHTMLAttributes<HTMLImageElement>) => {
-			return (
-				// eslint-disable-next-line @next/next/no-img-element, jsx-a11y/alt-text
-				<img
-					className='w-auto my-4 max-h-[15rem] rounded-lg'
-					{...props}>
-					{children}
-				</img>
-			);
+			// Only use Next/Image for absolute URLs, as Next/Image requires absolute URLs
+			if (src && (src.startsWith('http://') || src.startsWith('https://'))) {
+				return (
+					<div className="w-auto my-4 max-h-[15rem]">
+						{/* Fix 2: Use Next/Image component for optimization */}
+						<Image 
+							src={src}
+							alt={alt || "Markdown image"}
+							width={500}
+							height={300}
+							className="rounded-lg"
+							style={{ objectFit: 'contain', maxHeight: '15rem' }}
+						/>
+					</div>
+				);
+			}			
 		},
 		p: ({ children, ...props }: React.ComponentProps<"p">) => {
 			const isSourceParagraph = String(children).startsWith("Sources:");
@@ -264,24 +261,8 @@ const MarkdownDisplay: React.FC<{ content: string }> = ({ content }) => {
 				</div>
 			);
 		},
-		/*
-		Alert: ({
-			children,
-			type = "info",
-			...props
-		}: {
-			children: React.ReactNode;
-			type?: string;
-		}) => (
-			<Alert className='my-4 font-inter' {...props}>
-				<AlertTitle>{type === "info" ? "Note" : type.toUpperCase()}</AlertTitle>
-				{children}
-			</Alert>
-		),
-		*/
 	};
 
-	// Preprocess the content to handle links before rendering it
 	const processedContent = preprocessContent(content);
 
 	return (
@@ -296,5 +277,8 @@ const MarkdownDisplay: React.FC<{ content: string }> = ({ content }) => {
 		</div>
 	);
 };
+
+// Fix 1: Add display name to the component
+MarkdownDisplay.displayName = 'MarkdownDisplay';
 
 export default MarkdownDisplay;

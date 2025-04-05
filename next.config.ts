@@ -1,5 +1,10 @@
+import type { NextConfig } from 'next';
+import createNextIntlPlugin from 'next-intl/plugin';
+ 
+const withNextIntl = createNextIntlPlugin();
+ 
 /** @type {import('next').NextConfig} */
-const nextConfig = {
+const nextConfig: NextConfig = {
   rewrites: async () => {
     return [
       {
@@ -25,6 +30,20 @@ const nextConfig = {
       },
     ];
   },
+  images: {
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: '**',
+      },
+    ],
+  },
+  /*
+  outputFileTracingExcludes: {
+    '/api/**': []
+  },
+  */ 
+  
 };
 
-module.exports = nextConfig;
+module.exports = withNextIntl(nextConfig);
