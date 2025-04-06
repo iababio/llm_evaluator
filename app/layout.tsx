@@ -4,7 +4,6 @@ import { ClerkProvider } from "@clerk/nextjs";
 import type { Metadata } from "next";
 import { Inter, Epilogue } from "next/font/google";
 
-// Configure the fonts properly
 const inter = Inter({
   variable: "--font-inter",
   subsets: ["latin"],

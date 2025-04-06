@@ -11,7 +11,6 @@ export default function SignInPage() {
   const { isLoaded, isSignedIn, user } = useUser();
   const router = useRouter();
 
-  // If the user is already signed in, redirect to the chat page
   useEffect(() => {
     if (isLoaded && isSignedIn) {
       router.push("/chat");
@@ -20,8 +19,7 @@ export default function SignInPage() {
 
   return (
     <div className="min-h-screen flex flex-col md:flex-row">
-      {/* Left side - Branding & App Info */}
-      <div className="bg-blue-600 md:w-1/2 p-8 flex flex-col justify-center items-center text-white relative">
+      <div className="bg-red-800 md:w-1/2 p-8 flex flex-col justify-center items-center text-white relative">
         <div className="max-w-md mx-auto my-10 py-20">
           <h1 className="text-3xl md:text-4xl font-bold mb-6">
             LLM Evaluation Platform
@@ -84,7 +82,6 @@ export default function SignInPage() {
           </div>
         </div>
 
-        {/* Developer/Creator Link - Added at the bottom of the left panel */}
         <div className="relative left-0 w-full flex justify-center">
           <Link
             href="https://github.com/iababio/llm_evaluator"
@@ -109,7 +106,6 @@ export default function SignInPage() {
         </div>
       </div>
 
-      {/* Right side - Sign In Component */}
       <div className="md:w-1/2 p-8 flex items-center justify-center bg-gray-50">
         <div className="w-full max-w-md">
           <SignIn
