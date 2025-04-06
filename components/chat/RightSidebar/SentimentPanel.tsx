@@ -6,7 +6,11 @@ import { sentimentColors, sentimentTextColors } from "@/utils/sentimentColors";
 import PieChart from "@/components/charts/PieChart";
 import BarChart from "@/components/charts/BarChart";
 import CirclePack from "@/components/charts/CirclePack";
-import { formatSentimentForCirclePack } from "@/utils/chartFormatters";
+import SunburstChart from "@/components/charts/SunburstChart";
+import {
+  formatSentimentForCirclePack,
+  formatSentimentForSunburst,
+} from "@/utils/chartFormatters";
 
 interface SentimentSegment {
   text: string;
@@ -27,9 +31,9 @@ export default function SentimentPanel({
   const [expandedSegments, setExpandedSegments] = useState<
     Record<number, boolean>
   >({});
-  const [chartType, setChartType] = useState<"pie" | "bar" | "circle">(
-    "circle",
-  );
+  const [chartType, setChartType] = useState<
+    "pie" | "bar" | "circle" | "sunburst"
+  >("sunburst");
 
   const toggleSegment = (index: number) => {
     setExpandedSegments((prev) => ({
@@ -64,14 +68,18 @@ export default function SentimentPanel({
       id: index,
       text:
         segment.text.substring(0, 30) + (segment.text.length > 30 ? "..." : ""),
-      width: segment.text.length, // Add required width property
       length: segment.text.length,
+      width: segment.text.length,
       sentiments: segment.sentiment.join(", "),
     }));
   };
 
   const prepareCirclePackData = () => {
     return formatSentimentForCirclePack(sentimentResults);
+  };
+
+  const prepareSunburstData = () => {
+    return formatSentimentForSunburst(sentimentResults);
   };
 
   if (!sentimentResults) {
@@ -84,48 +92,78 @@ export default function SentimentPanel({
     );
   }
 
+  // Get sidebar width to properly size charts
+  const sidebarWidth =
+    typeof window !== "undefined"
+      ? Math.min(window.innerWidth * 0.95, 460)
+      : 400;
+
+  // Calculate proportional height based on width (maintaining aspect ratio)
+  const chartWidth = sidebarWidth - 40; // Account for padding
+  const chartHeight = chartWidth; // 1:1 aspect ratio for most charts
+
   return (
     <div className="p-4">
       {/* Chart Type Selector */}
-      <div className="mb-6 flex justify-center">
+      <div className="mb-4 flex justify-center">
         <div className="inline-flex rounded-md shadow-sm" role="group">
           <button
-            className={`px-4 py-2 text-sm font-medium border ${chartType === "pie" ? "bg-blue-600 text-white" : "bg-white text-gray-700"} rounded-l-lg`}
+            className={`px-3 py-2 text-xs font-medium border ${chartType === "pie" ? "bg-blue-600 text-white" : "bg-white text-gray-700"} rounded-l-lg`}
             onClick={() => setChartType("pie")}
           >
-            Pie Chart
+            Pie
           </button>
           <button
-            className={`px-4 py-2 text-sm font-medium border-t border-b border-r ${chartType === "bar" ? "bg-blue-600 text-white" : "bg-white text-gray-700"}`}
+            className={`px-3 py-2 text-xs font-medium border-t border-b border-r ${chartType === "bar" ? "bg-blue-600 text-white" : "bg-white text-gray-700"}`}
             onClick={() => setChartType("bar")}
           >
-            Bar Chart
+            Bar
           </button>
           <button
-            className={`px-4 py-2 text-sm font-medium border-t border-b border-r ${chartType === "circle" ? "bg-blue-600 text-white" : "bg-white text-gray-700"} rounded-r-lg`}
+            className={`px-3 py-2 text-xs font-medium border-t border-b border-r ${chartType === "circle" ? "bg-blue-600 text-white" : "bg-white text-gray-700"}`}
             onClick={() => setChartType("circle")}
           >
-            Circle Pack
+            Circle
+          </button>
+          <button
+            className={`px-3 py-2 text-xs font-medium border-t border-b border-r ${chartType === "sunburst" ? "bg-blue-600 text-white" : "bg-white text-gray-700"} rounded-r-lg`}
+            onClick={() => setChartType("sunburst")}
+          >
+            Sunburst
           </button>
         </div>
       </div>
 
-      <div className="mb-8 w-full overflow-x-hidden">
-        <div className="w-full max-w-[450px] mx-auto">
+      {/* Charts container that fits within sidebar */}
+      <div className="mb-6 w-full flex justify-center">
+        <div
+          className="chart-container"
+          style={{ width: `${chartWidth}px`, height: `${chartHeight}px` }}
+        >
           {chartType === "pie" && (
             <PieChart
               data={preparePieChartData()}
               sentimentColors={sentimentColors}
+              width={chartWidth}
+              height={chartHeight}
             />
           )}
           {chartType === "bar" && (
-            <BarChart data={prepareBarChartData()} width={450} />
+            <BarChart data={prepareBarChartData()} width={chartWidth} />
           )}
           {chartType === "circle" && (
             <CirclePack
               data={prepareCirclePackData()}
-              width={450}
-              height={450}
+              width={chartWidth}
+              height={chartHeight}
+            />
+          )}
+          {chartType === "sunburst" && (
+            <SunburstChart
+              data={prepareSunburstData()}
+              width={chartWidth}
+              height={chartHeight}
+              maxDepth={2}
             />
           )}
         </div>

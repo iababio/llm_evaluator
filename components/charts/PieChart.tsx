@@ -11,9 +11,16 @@ interface PieChartDataItem {
 interface PieChartProps {
   data: PieChartDataItem[];
   sentimentColors: Record<string, string>;
+  width?: number;
+  height?: number;
 }
 
-export default function PieChart({ data, sentimentColors }: PieChartProps) {
+export default function PieChart({
+  data,
+  sentimentColors,
+  width,
+  height,
+}: PieChartProps) {
   const chartRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -49,43 +56,37 @@ export default function PieChart({ data, sentimentColors }: PieChartProps) {
     };
 
     const bgClass = colorClass.split(" ")[0];
-    return colorMap[bgClass] || "#d1d5db"; // Default to gray if not found
+    return colorMap[bgClass] || "#d1d5db";
   };
 
   const renderPieChart = () => {
     if (!chartRef.current || !data.length) return;
 
-    // Clear previous chart
     d3.select(chartRef.current).selectAll("*").remove();
 
-    const width = 300;
     const height = 300;
-    const radius = Math.min(width, height) / 2;
+    const radius = Math.min(width!, height) / 2;
 
-    // Calculate total for percentages
     const total = data.reduce((sum, d) => sum + d.value, 0);
 
-    // Format number as percentage
     const formatPercent = (value: number) => {
       const percent = (value / total) * 100;
       return percent < 1 ? "<1%" : `${Math.round(percent)}%`;
     };
 
-    // Create the color scale using our custom color mapping
     const color = d3
       .scaleOrdinal<string>()
       .domain(data.map((d) => d.name))
       .range(data.map((d) => getSentimentColor(d.name)));
 
-    // Create the pie layout and arc generator
     const pie = d3
       .pie<PieChartDataItem>()
-      .sort((a, b) => b.value - a.value) // Sort by value (largest first)
+      .sort((a, b) => b.value - a.value)
       .value((d) => d.value);
 
     const arc = d3
       .arc<d3.PieArcDatum<PieChartDataItem>>()
-      .innerRadius(radius * 0.5) // Create a donut chart for better visibility
+      .innerRadius(radius * 0.5)
       .outerRadius(radius - 10);
 
     const outerArc = d3
@@ -95,18 +96,16 @@ export default function PieChart({ data, sentimentColors }: PieChartProps) {
 
     const arcs = pie(data);
 
-    // Create the SVG container
     const svg = d3
       .select(chartRef.current)
       .append("svg")
-      .attr("width", width)
+      .attr("width", width!)
       .attr("height", height)
       .attr("viewBox", `0 0 ${width} ${height}`)
       .attr("style", "max-width: 100%; height: auto;")
       .append("g")
-      .attr("transform", `translate(${width / 2},${height / 2})`);
+      .attr("transform", `translate(${width! / 2},${height / 2})`);
 
-    // Add title in the center
     svg
       .append("text")
       .attr("text-anchor", "middle")
@@ -122,7 +121,6 @@ export default function PieChart({ data, sentimentColors }: PieChartProps) {
       .attr("y", 15)
       .text("Distribution");
 
-    // Create gradient for slices
     const defs = svg.append("defs");
     arcs.forEach((d, i) => {
       const gradientId = `gradient-${i}`;
@@ -151,7 +149,6 @@ export default function PieChart({ data, sentimentColors }: PieChartProps) {
         .attr("stop-color", color((d.data as any).name));
     });
 
-    // Add a sector path for each value with gradient
     const slice = svg
       .selectAll("path")
       .data(arcs)
@@ -180,7 +177,6 @@ export default function PieChart({ data, sentimentColors }: PieChartProps) {
           .attr("transform", "translate(0,0)");
       });
 
-    // Add hover tooltip
     slice
       .append("title")
       .text(
@@ -188,22 +184,16 @@ export default function PieChart({ data, sentimentColors }: PieChartProps) {
           `${(d.data as any).name}: ${(d.data as any).value} (${formatPercent((d.data as any).value)})`,
       );
 
-    // Utility function for calculating the middle angle of a slice
     function midAngle(d: any) {
       return d.startAngle + (d.endAngle - d.startAngle) / 2;
     }
 
-    // Only add labels for segments that are large enough
-    const labelThreshold = total * 0.04; // 4% threshold for labels
+    const labelThreshold = total * 0.04;
 
-    // Filter data for labels
     const labelsData = arcs.filter(
       (d) => (d.data as any).value >= labelThreshold,
     );
 
-    // IMPROVED LABEL POSITIONING ALGORITHM
-
-    // Helper function to determine if two labels would overlap
     const wouldOverlap = (
       pos1: [number, number],
       pos2: [number, number],
@@ -213,16 +203,13 @@ export default function PieChart({ data, sentimentColors }: PieChartProps) {
       const [x1, y1] = pos1;
       const [x2, y2] = pos2;
 
-      // Horizontal overlap check
       const horizontalOverlap = Math.abs(x1 - x2) < width;
 
-      // Vertical overlap check
       const verticalOverlap = Math.abs(y1 - y2) < height;
 
       return horizontalOverlap && verticalOverlap;
     };
 
-    // Calculate initial positions for all labels
     type LabelPosition = {
       id: number;
       data: d3.PieArcDatum<PieChartDataItem>;
@@ -231,7 +218,6 @@ export default function PieChart({ data, sentimentColors }: PieChartProps) {
       side: "left" | "right";
     };
 
-    // Calculate and sort label positions by vertical position
     const labelPositions: LabelPosition[] = labelsData.map((d, i) => {
       const angle = midAngle(d);
       const side = angle < Math.PI ? "right" : "left";
@@ -248,7 +234,6 @@ export default function PieChart({ data, sentimentColors }: PieChartProps) {
       };
     });
 
-    // Sort labels by y-position (top to bottom)
     const sortedLabels = {
       left: labelPositions
         .filter((l) => l.side === "left")
@@ -258,39 +243,29 @@ export default function PieChart({ data, sentimentColors }: PieChartProps) {
         .sort((a, b) => a.pos[1] - b.pos[1]),
     };
 
-    // Adjust positions to prevent overlaps (for each side separately)
     ["left", "right"].forEach((side) => {
       const labels = sortedLabels[side as "left" | "right"];
 
-      // Skip if no labels on this side
       if (labels.length <= 1) return;
 
-      // Minimum vertical space between labels
       const minSpacing = 20;
 
-      // Process labels from top to bottom
       for (let i = 1; i < labels.length; i++) {
         const prevLabel = labels[i - 1];
         const currLabel = labels[i];
 
-        // If this label would overlap with previous label
         if (currLabel.pos[1] - prevLabel.pos[1] < minSpacing) {
-          // Push current label down
           currLabel.pos[1] = prevLabel.pos[1] + minSpacing;
         }
       }
 
-      // Second pass: If labels now extend too far down, push some labels up
       if (labels.length > 2) {
         const bottomLabel = labels[labels.length - 1];
         if (bottomLabel.pos[1] > height / 2 - 20) {
-          // How much we need to move everything up
           const offset = bottomLabel.pos[1] - (height / 2 - 20);
 
-          // Distribute the offset among all labels
           const perLabelOffset = offset / (labels.length - 1);
 
-          // Start from the second label (keep first in place)
           for (let i = 1; i < labels.length; i++) {
             labels[i].pos[1] -= perLabelOffset * (labels.length - i);
           }
@@ -298,10 +273,8 @@ export default function PieChart({ data, sentimentColors }: PieChartProps) {
       }
     });
 
-    // Flatten positions back to a single array
     const adjustedPositions = [...sortedLabels.left, ...sortedLabels.right];
 
-    // Add polylines for connecting labels with adjusted positions
     svg
       .selectAll("polyline")
       .data(adjustedPositions)
@@ -317,7 +290,6 @@ export default function PieChart({ data, sentimentColors }: PieChartProps) {
       .attr("stroke-width", 1)
       .attr("opacity", 0.5);
 
-    // Add labels with adjusted positions
     svg
       .selectAll("text.label")
       .data(adjustedPositions)
@@ -329,28 +301,23 @@ export default function PieChart({ data, sentimentColors }: PieChartProps) {
         const side = d.side;
         const dataItem = d.data.data as any;
 
-        // Name on first line, percentage on second
         return `<tspan x="${x}" y="${y}" text-anchor="${side === "right" ? "start" : "end"}">${dataItem.name.substring(0, 10)}</tspan>
                 <tspan x="${x}" y="${y + 14}" text-anchor="${side === "right" ? "start" : "end"}" font-size="10px">${formatPercent(dataItem.value)}</tspan>`;
       })
       .attr("fill", "#333");
 
-    // Add legend at the bottom of the chart
     const legendRectSize = 12;
     const legendSpacing = 5;
     const legendHeight = legendRectSize + legendSpacing;
 
-    // Calculate the width available for the legend
-    const legendWidth = width - 40;
+    const legendWidth = width! - 40;
 
-    // Determine how many items can fit in a row based on average text length
-    const avgItemWidth = 80; // Estimate based on average item text width
+    const avgItemWidth = 80;
     const legendItemsPerRow = Math.max(
       2,
       Math.floor(legendWidth / avgItemWidth),
     );
 
-    // Create legend groups with improved positioning
     const legend = svg
       .selectAll(".legend")
       .data(data)
@@ -361,13 +328,10 @@ export default function PieChart({ data, sentimentColors }: PieChartProps) {
         const row = Math.floor(i / legendItemsPerRow);
         const col = i % legendItemsPerRow;
 
-        // Calculate column width based on number of items per row
         const colWidth = legendWidth / legendItemsPerRow;
 
-        // Position columns evenly
         const x = -legendWidth / 2 + col * colWidth + 10;
 
-        // Position rows at the bottom of the chart
         const y =
           height / 2 -
           30 -
@@ -377,7 +341,6 @@ export default function PieChart({ data, sentimentColors }: PieChartProps) {
         return `translate(${x}, ${y})`;
       });
 
-    // Add colored rectangles to legend
     legend
       .append("rect")
       .attr("width", legendRectSize)

@@ -35,47 +35,37 @@ export default function CirclePack({
   const renderCirclePack = () => {
     if (!chartRef.current) return;
 
-    // Clear previous chart
     d3.select(chartRef.current).selectAll("*").remove();
 
-    // Configure dimensions and margins
-    const margin = 1; // to avoid clipping the root circle stroke
+    const margin = 1;
 
-    // Helpers for extracting info from data structure
-    const name = (d: any) => d.id.split(".").pop(); // "Strings" of "flare.util.Strings"
-    const group = (d: any) => d.id.split(".")[0]; // Group by first segment
-    const names = (d: any) => name(d).split(/(?=[A-Z][a-z])|\s+/g); // ["Legend", "Item"] of "LegendItems"
+    const name = (d: any) => d.id.split(".").pop();
+    const group = (d: any) => d.id.split(".")[0];
+    const names = (d: any) => name(d).split(/(?=[A-Z][a-z])|\s+/g);
 
-    // Format for numbers
     const format = d3.format(",d");
 
-    // Create a categorical color scale
     const color = d3.scaleOrdinal(d3.schemeTableau10);
 
-    // Define the type for our hierarchy data
     interface HierarchyData {
       children: CirclePackDataItem[];
     }
 
-    // Create the pack layout with proper typing
     const pack = d3
       .pack<HierarchyData>()
       .size([width - margin * 2, height - margin * 2])
       .padding(3);
 
-    // Prepare hierarchical data structure
     const hierarchyData: HierarchyData = {
       children: data,
     };
 
-    // Compute the hierarchy and apply the pack layout
     const root = pack(
       d3
         .hierarchy<HierarchyData>(hierarchyData)
         .sum((d) => (d as any).value || 0),
     );
 
-    // Create the SVG container
     const svg = d3
       .select(chartRef.current)
       .append("svg")
@@ -85,7 +75,6 @@ export default function CirclePack({
       .attr("style", "max-width: 100%; height: auto; font: 10px sans-serif;")
       .attr("text-anchor", "middle");
 
-    // Add title to the chart
     svg
       .append("text")
       .attr("x", width / 2)
@@ -95,7 +84,6 @@ export default function CirclePack({
       .attr("font-weight", "bold")
       .text("Sentiment Analysis Distribution");
 
-    // Place each node according to the layout's x and y values
     const node = svg
       .append("g")
       .selectAll("g")
@@ -103,22 +91,18 @@ export default function CirclePack({
       .join("g")
       .attr("transform", (d) => `translate(${d.x},${d.y})`);
 
-    // Add a title tooltip
     node
       .append("title")
       .text((d) => `${(d.data as any).id}\n${format((d.data as any).value)}`);
 
-    // Add a filled circle
     node
       .append("circle")
       .attr("fill-opacity", 0.7)
       .attr("fill", (d) => color(group(d.data as any)))
       .attr("r", (d) => d.r);
 
-    // Add a label
     const text = node.append("text").attr("clip-path", (d) => `circle(${d.r})`);
 
-    // Add a tspan for each word in the name
     text
       .selectAll("tspan.name")
       .data((d) => {
@@ -132,7 +116,6 @@ export default function CirclePack({
       .attr("font-weight", "bold")
       .text((d) => d);
 
-    // Add a tspan for the node's value
     text
       .append("tspan")
       .attr("x", 0)
@@ -144,7 +127,6 @@ export default function CirclePack({
       .attr("fill-opacity", 0.7)
       .text((d) => format((d.data as any).value));
 
-    // Add legend
     const legend = svg
       .append("g")
       .attr("transform", `translate(${width - 120}, 40)`);

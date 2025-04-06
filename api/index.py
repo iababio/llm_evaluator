@@ -1,3 +1,4 @@
+import asyncio
 from fastapi import FastAPI, Query, HTTPException
 from fastapi.responses import StreamingResponse, JSONResponse
 import traceback
@@ -12,9 +13,7 @@ app = FastAPI()
 
 @app.post("/api/completion")
 async def handle_chat_completion(request: CompletionRequest, protocol: str = Query('data')):
-    # Handle both prompt-based and message-based requests
     if request.prompt:
-        # Convert prompt to messages format
         openai_messages = [{"role": "user", "content": request.prompt}]
     elif request.messages:
         openai_messages = convert_to_openai_messages(request.messages)
@@ -45,11 +44,27 @@ async def handle_sentiment_analysis(request: Request):
     try:
         messages = request.messages
         openai_messages = convert_to_openai_messages(messages)
-                
-        result = await analyze_sentiment(openai_messages)
         
-        # Return as JSON response
-        return result
+        # Set a timeout for the entire operation
+        try:
+            result = await asyncio.wait_for(
+                analyze_sentiment(openai_messages),
+                timeout=60.0  # 60 second total timeout
+            )
+            return result
+        except asyncio.TimeoutError:
+            # If timeout occurs, return a simplified response
+            return JSONResponse(
+                status_code=200,  # Return 200 to avoid client retries
+                content={
+                    "segments": [
+                        {
+                            "text": "Analysis timed out. Your text might be too long or complex.",
+                            "sentiment": ["neutral"]
+                        }
+                    ]
+                }
+            )
         
     except Exception as e:
         error_detail = {
@@ -57,4 +72,15 @@ async def handle_sentiment_analysis(request: Request):
             "traceback": traceback.format_exception(*sys.exc_info())
         }
         print("Error in sentiment analysis:", error_detail)
-        raise HTTPException(status_code=500, detail=str(e))
+        # Return a proper error response rather than throwing an exception
+        return JSONResponse(
+            status_code=500,
+            content={
+                "segments": [
+                    {
+                        "text": f"Error analyzing sentiment: {str(e)}",
+                        "sentiment": ["neutral"]
+                    }
+                ]
+            }
+        )

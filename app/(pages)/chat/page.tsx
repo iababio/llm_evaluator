@@ -10,6 +10,7 @@ import Header from "@/components/chat/Header/Header";
 import LeftSidebar from "@/components/chat/LeftSidebar/LeftSidebar";
 import Editor from "@/components/chat/Editor/Editor";
 import RightSidebar from "@/components/chat/RightSidebar/RightSidebar";
+import { AnalysisProgress } from "@/components/ui/analysis-progress";
 
 // Hooks
 import useMarkdown from "@/hooks/useMarkdown";
@@ -40,9 +41,10 @@ export default function ChatPage() {
     handleAnalyzeSentiments,
     showSentimentPanel,
     setShowSentimentPanel,
+    progress,
+    cancelAnalysis,
   } = useSentimentAnalysis();
 
-  // Add useCompletion hook for document editing
   const {
     completion,
     complete,
@@ -52,21 +54,17 @@ export default function ChatPage() {
     api: "/api/completion",
     onResponse: (response) => {
       console.log("AI response started:", response);
-      // Keep existing content when a new stream starts
       setMarkdownContent((prev) => (prev.trim() ? prev + "\n\nAI: " : "AI: "));
     },
     onFinish: (completion) => {
       console.log("AI completion finished:", completion);
-      // Set the markdown content directly
       setMarkdownContent(completion);
 
-      // Also append to messages for consistency with the chat approach
       append({
         role: "assistant",
         content: completion,
       });
 
-      // Calculate word count
       updateWordCount(completion);
     },
     onError: (error) => {
@@ -79,7 +77,6 @@ export default function ChatPage() {
     },
   });
 
-  // Update useChat configuration
   const {
     messages,
     input,
@@ -100,7 +97,6 @@ export default function ChatPage() {
       },
     ],
     onFinish: (message) => {
-      // When chat completes, update the markdown content
       setMarkdownContent(message.content);
       updateWordCount(message.content);
     },
@@ -114,20 +110,17 @@ export default function ChatPage() {
     },
   });
 
-  // Redirect if not authenticated - AFTER declaring all hooks
   useEffect(() => {
     if (isLoaded && !isSignedIn) {
       router.push("/sign-in");
     }
   }, [isLoaded, isSignedIn, router]);
 
-  // Update word count function
   const updateWordCount = (text: string) => {
     const words = text ? text.trim().split(/\s+/).length : 0;
     setWordCount(words);
   };
 
-  // Initialize content from messages
   useEffect(() => {
     if (messages.length > 0) {
       const lastAssistantMessage = [...messages]
@@ -141,7 +134,6 @@ export default function ChatPage() {
     }
   }, [messages]);
 
-  // Custom hook for real-time streaming update to the editor
   useEffect(() => {
     if (completion) {
       setMarkdownContent(completion);
@@ -149,39 +141,30 @@ export default function ChatPage() {
     }
   }, [completion]);
 
-  // Add resize effect
   useEffect(() => {
     const handleResize = () => {
-      // If we're on mobile (< 768px) and sidebar was showing, hide it
       if (window.innerWidth < 768) {
         setShowLeftSidebar(false);
       }
     };
 
-    // Listen for window resize
     window.addEventListener("resize", handleResize);
 
-    // Clean up
     return () => {
       window.removeEventListener("resize", handleResize);
     };
   }, []);
 
-  // Handle submitting text to AI for processing
   const handleSubmitToAI = (text: string) => {
-    // Add user message to chat
     append({
       role: "user",
       content: text,
     });
 
-    // Use completion API for more complex editing tasks
     complete(text);
   };
 
-  // Enhance the analyze sentiments function to always use current content if none provided
   const analyzeSentiments = (optionalContent?: string) => {
-    // If content is not provided or is special marker, use current markdown content
     const contentToAnalyze =
       optionalContent && optionalContent !== "current-document"
         ? optionalContent
@@ -190,7 +173,6 @@ export default function ChatPage() {
     handleAnalyzeSentiments(contentToAnalyze);
   };
 
-  // Handle loading state
   if (!isLoaded || !isSignedIn) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -248,10 +230,19 @@ export default function ChatPage() {
       {/* Loading Overlay */}
       {isAnalyzing && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-lg shadow-lg flex items-center gap-4">
-            <div className="animate-spin h-5 w-5 border-4 border-blue-500 border-t-transparent rounded-full"></div>
-            <p>Analyzing sentiment...</p>
-          </div>
+          {progress ? (
+            <AnalysisProgress
+              percentage={progress.percentage}
+              estimatedTimeRemaining={progress.estimatedTimeRemaining}
+              status={progress.status}
+              onCancel={cancelAnalysis}
+            />
+          ) : (
+            <div className="bg-white p-6 rounded-lg shadow-lg flex items-center gap-4">
+              <div className="animate-spin h-5 w-5 border-4 border-blue-500 border-t-transparent rounded-full"></div>
+              <p>Initializing analysis...</p>
+            </div>
+          )}
         </div>
       )}
     </div>
