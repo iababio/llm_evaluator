@@ -28,8 +28,8 @@ interface SunburstChartProps {
 
 export default function SunburstChart({
   data,
-  width = 360,
-  height = 360,
+  width = 300, // Keep the reduced width
+  height = 300, // Keep the reduced height
   maxDepth = 2,
 }: SunburstChartProps) {
   const chartRef = useRef<HTMLDivElement>(null);
@@ -47,7 +47,7 @@ export default function SunburstChart({
     d3.select(chartRef.current).selectAll("*").remove();
 
     // Define fixed margins to ensure proper fit
-    const margin = { top: 35, right: 10, bottom: 10, left: 10 };
+    const margin = { top: 20, right: 2, bottom: 2, left: 2 }; // Keep reduced margins
 
     // Calculate available space for chart
     const availableWidth = width - margin.left - margin.right;
@@ -56,8 +56,8 @@ export default function SunburstChart({
     // Calculate radius based on available space
     const radius = Math.min(availableWidth, availableHeight) / 2;
 
-    // Reduced center circle size to 8% of radius
-    const centerRadius = radius * 0.08;
+    // Increase the center circle size from 3% to 8% of radius
+    const centerRadius = radius * 0.2; // Increased from 0.03 to 0.08
 
     // Create the color scale
     const colorScheme = d3.schemeCategory10;
@@ -69,13 +69,10 @@ export default function SunburstChart({
       .sum((d) => d.value || 0)
       .sort((a, b) => (b.value || 0) - (a.value || 0));
 
-    // Modify partition to start closer to center
+    // Keep partition size parameter
     const root = d3
       .partition<SunburstDataItem>()
-      .size([2 * Math.PI, hierarchy.height + 0.5])(
-      // Reduced from +1 to +0.5
-      hierarchy,
-    );
+      .size([2 * Math.PI, hierarchy.height + 0.2])(hierarchy);
 
     root.each((d) => {
       (d as any).current = d;
@@ -86,17 +83,17 @@ export default function SunburstChart({
       .arc<any>()
       .startAngle((d) => d.x0)
       .endAngle((d) => d.x1)
-      .padAngle((d) => Math.min((d.x1 - d.x0) / 2, 0.005))
-      .padRadius(radius * 1.5)
+      .padAngle((d) => Math.min((d.x1 - d.x0) / 2, 0.003))
+      .padRadius(radius * 1.3)
       .innerRadius((d) => {
-        // Make first level start very close to center, with minimal gap
         if (d.y0 === 0) return centerRadius;
-        // Scale y0 to start closer to center
-        return Math.max(d.y0 * radius * 0.7, centerRadius);
+        return Math.max(d.y0 * radius * 0.3, centerRadius);
       })
-      .outerRadius((d) => Math.max(d.y0 * radius * 0.7, d.y1 * radius - 1));
+      .outerRadius((d) =>
+        Math.max(d.y0 * radius * 0.7, d.y1 * radius * 0.3 - 1),
+      );
 
-    // Create the SVG container with proper dimensions and viewBox
+    // Create the SVG container
     const svg = d3
       .select(chartRef.current)
       .append("svg")
@@ -104,9 +101,9 @@ export default function SunburstChart({
       .attr("height", height)
       .attr("viewBox", [0, 0, width, height])
       .attr("style", "max-width: 100%; height: auto;")
-      .style("font", "11px sans-serif");
+      .style("font", "12px sans-serif");
 
-    // Create a group for the sunburst with proper translation to account for margins
+    // Create a group for the sunburst
     const chartGroup = svg
       .append("g")
       .attr("transform", `translate(${width / 2}, ${margin.top + radius})`);
@@ -115,16 +112,16 @@ export default function SunburstChart({
     svg
       .append("text")
       .attr("text-anchor", "middle")
-      .attr("font-size", "14px")
+      .attr("font-size", "12px")
       .attr("font-weight", "bold")
       .attr("x", width / 2)
-      .attr("y", 20)
+      .attr("y", 12)
       .text("Sentiment Analysis");
 
     // Calculate total value for percentage display
     const totalValue = root.value || 0;
 
-    // Append the arcs - filtered to maxDepth for simplicity
+    // Append the arcs
     const path = chartGroup
       .selectAll("path")
       .data(
@@ -132,7 +129,7 @@ export default function SunburstChart({
           .descendants()
           .slice(1)
           .filter((d) => d.depth <= maxDepth),
-      ) // Limit depth
+      )
       .join("path")
       .attr("fill", (d) => {
         let current = d;
@@ -207,7 +204,7 @@ export default function SunburstChart({
       return `${ancestry}\nCount: ${d.value}\n${format(d.value || 0)}`;
     });
 
-    // Adjust label visibility thresholds to show more labels
+    // Adjust label visibility thresholds and increase font size
     const label = chartGroup
       .append("g")
       .attr("pointer-events", "none")
@@ -219,11 +216,13 @@ export default function SunburstChart({
           .descendants()
           .slice(1)
           .filter((d) => {
-            // Reduced thresholds to show more labels
+            // Slightly increased threshold to prevent overlapping with larger font
             const angle = d.x1 - d.x0;
             const area = angle * (d.y1 - d.y0);
             return (
-              d.depth <= maxDepth && area > 0.03 && d.value! / totalValue > 0.03
+              d.depth <= maxDepth &&
+              area > 0.045 &&
+              d.value! / totalValue > 0.045
             );
           }),
       )
@@ -231,20 +230,21 @@ export default function SunburstChart({
       .attr("dy", "0.35em")
       .attr("fill-opacity", (d) => +labelVisible((d as any).current))
       .attr("transform", (d) => labelTransform((d as any).current))
-      .style("font-size", "9px")
+      .style("font-size", "12px") // Increased font size from 7px to 9px
+      .style("font-weight", "normal") // Added bold to improve readability
       .text((d) => {
         const name = d.data.name;
-        return name.length > 8 ? `${name.substring(0, 6)}...` : name;
+        return name.length > 5 ? `${name}` : name; // Shortened text further to accommodate larger font
       });
 
     // Make center circle smaller
     const parent = chartGroup
       .append("circle")
       .datum(root)
-      .attr("r", centerRadius)
+      .attr("r", centerRadius) // Using the updated centerRadius value
       .attr("fill", "white")
       .attr("stroke", "#ccc")
-      .attr("stroke-width", 0.8)
+      .attr("stroke-width", 0.3)
       .attr("pointer-events", "all")
       .on("click", clicked);
 
@@ -252,8 +252,9 @@ export default function SunburstChart({
     chartGroup
       .append("text")
       .attr("text-anchor", "middle")
-      .attr("font-size", "7px") // Smaller font
-      .attr("dy", "0.2em") // Adjust vertical position
+      .attr("font-size", "12px") // Increased from 6px to 7px
+      .attr("font-weight", "bold") // Added bold to improve visibility
+      .attr("dy", "0.1em")
       .attr("fill", "#555")
       .attr("pointer-events", "none")
       .text("Reset");
@@ -262,8 +263,9 @@ export default function SunburstChart({
     chartGroup
       .append("text")
       .attr("text-anchor", "middle")
-      .attr("font-size", "6px") // Smaller font
-      .attr("dy", "1.2em")
+      .attr("font-size", "10px") // Increased from 5px to 6px
+      .attr("font-weight", "bold") // Added bold to improve visibility
+      .attr("dy", "0.8em")
       .attr("fill", "#777")
       .attr("pointer-events", "none")
       .text(`100%`);
@@ -291,9 +293,7 @@ export default function SunburstChart({
       // Update center text to show percentage of viewed segment
       const percentage =
         p === root ? 100 : Math.round(((p.value || 0) / totalValue) * 100);
-      chartGroup
-        .select("text[dy='1.2em']") // Updated selector to match new dy value
-        .text(`${percentage}%`);
+      chartGroup.select("text[dy='0.8em']").text(`${percentage}%`);
 
       const duration = event.altKey ? 7500 : 450;
       const transitionName = "sunburstTransition";
@@ -339,20 +339,20 @@ export default function SunburstChart({
 
     // Helper functions for determining visibility
     function arcVisible(d: any) {
-      return d.y1 <= maxDepth + 1 && d.y0 >= 0.5 && d.x1 > d.x0; // Changed from 1 to 0.5
+      return d.y1 <= maxDepth + 1 && d.y0 >= 0.2 && d.x1 > d.x0;
     }
 
     function labelVisible(d: any) {
       return (
         d.y1 <= maxDepth + 1 &&
-        d.y0 >= 0.5 &&
-        (d.y1 - d.y0) * (d.x1 - d.x0) > 0.03
-      ); // Reduced threshold
+        d.y0 >= 0.2 &&
+        (d.y1 - d.y0) * (d.x1 - d.x0) > 0.045 // Slightly increased to ensure labels don't overlap
+      );
     }
 
     function labelTransform(d: any) {
       const x = (((d.x0 + d.x1) / 2) * 180) / Math.PI;
-      const y = ((d.y0 + d.y1) / 2) * radius * 0.7; // Match the scale factor from arc definition
+      const y = ((d.y0 + d.y1) / 2) * radius * 0.5;
       return `rotate(${x - 90}) translate(${y},0) rotate(${x < 180 ? 0 : 180})`;
     }
   };
@@ -361,7 +361,7 @@ export default function SunburstChart({
     <div className="flex flex-col items-center">
       <div ref={chartRef} className="w-full overflow-visible"></div>
       {(!data || !data.children || data.children.length === 0) && (
-        <div className="text-gray-500 mt-4 text-sm">
+        <div className="text-gray-500 mt-2 text-xs">
           No data available for visualization
         </div>
       )}

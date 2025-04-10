@@ -18,8 +18,8 @@ interface PieChartProps {
 export default function PieChart({
   data,
   sentimentColors,
-  width,
-  height,
+  width = 240, // Reduced default width
+  height = 200, // Reduced default height
 }: PieChartProps) {
   const chartRef = useRef<HTMLDivElement>(null);
 
@@ -64,8 +64,10 @@ export default function PieChart({
 
     d3.select(chartRef.current).selectAll("*").remove();
 
-    const height = 300;
-    const radius = Math.min(width!, height) / 2;
+    const chartHeight = height;
+    const chartWidth = width;
+    // Reduce the radius to make the outer circle smaller
+    const radius = (Math.min(chartWidth, chartHeight) / 2) * 0.65;
 
     const total = data.reduce((sum, d) => sum + d.value, 0);
 
@@ -86,8 +88,8 @@ export default function PieChart({
 
     const arc = d3
       .arc<d3.PieArcDatum<PieChartDataItem>>()
-      .innerRadius(radius * 0.5)
-      .outerRadius(radius - 10);
+      .innerRadius(radius * 0.35) // Increased inner circle size
+      .outerRadius(radius - 30); // Tighter outer circle with less padding
 
     const outerArc = d3
       .arc<d3.PieArcDatum<PieChartDataItem>>()
@@ -99,17 +101,18 @@ export default function PieChart({
     const svg = d3
       .select(chartRef.current)
       .append("svg")
-      .attr("width", width!)
-      .attr("height", height)
-      .attr("viewBox", `0 0 ${width} ${height}`)
+      .attr("width", chartWidth)
+      .attr("height", chartHeight)
+      .attr("viewBox", `0 0 ${chartWidth} ${chartHeight}`)
       .attr("style", "max-width: 100%; height: auto;")
       .append("g")
-      .attr("transform", `translate(${width! / 2},${height / 2})`);
+      .attr("transform", `translate(${chartWidth / 2},${chartHeight / 2})`);
 
+    // Title text
     svg
       .append("text")
       .attr("text-anchor", "middle")
-      .attr("font-size", "16px")
+      .attr("font-size", "14px")
       .attr("font-weight", "bold")
       .attr("y", -5)
       .text("Sentiment");
@@ -117,8 +120,8 @@ export default function PieChart({
     svg
       .append("text")
       .attr("text-anchor", "middle")
-      .attr("font-size", "14px")
-      .attr("y", 15)
+      .attr("font-size", "12px")
+      .attr("y", 8)
       .text("Distribution");
 
     const defs = svg.append("defs");
@@ -156,14 +159,14 @@ export default function PieChart({
       .attr("d", arc as any)
       .attr("fill", (d, i) => `url(#gradient-${i})`)
       .attr("stroke", "#fff")
-      .attr("stroke-width", 1)
+      .attr("stroke-width", 0.5)
       .style("cursor", "pointer")
       .on("mouseover", function (event, d: d3.PieArcDatum<PieChartDataItem>) {
         d3.select(this)
           .transition()
           .duration(100)
           .attr("transform", function () {
-            const dist = 5;
+            const dist = 3;
             const midAngle = (d.startAngle + d.endAngle) / 2;
             const x = Math.sin(midAngle) * dist;
             const y = -Math.cos(midAngle) * dist;
@@ -188,27 +191,12 @@ export default function PieChart({
       return d.startAngle + (d.endAngle - d.startAngle) / 2;
     }
 
-    const labelThreshold = total * 0.04;
+    // Show labels for all slices
+    const labelThreshold = total * 0.01; // Very low threshold to include all slices
 
     const labelsData = arcs.filter(
       (d) => (d.data as any).value >= labelThreshold,
     );
-
-    const wouldOverlap = (
-      pos1: [number, number],
-      pos2: [number, number],
-      height: number = 30,
-      width: number = 80,
-    ) => {
-      const [x1, y1] = pos1;
-      const [x2, y2] = pos2;
-
-      const horizontalOverlap = Math.abs(x1 - x2) < width;
-
-      const verticalOverlap = Math.abs(y1 - y2) < height;
-
-      return horizontalOverlap && verticalOverlap;
-    };
 
     type LabelPosition = {
       id: number;
@@ -218,12 +206,14 @@ export default function PieChart({
       side: "left" | "right";
     };
 
+    // Move labels outward to accommodate the larger font
     const labelPositions: LabelPosition[] = labelsData.map((d, i) => {
       const angle = midAngle(d);
       const side = angle < Math.PI ? "right" : "left";
 
       const pos = outerArc.centroid(d as any);
-      pos[0] = radius * 0.95 * (side === "right" ? 1 : -1);
+      // Extend labels further out from the chart
+      pos[0] = radius * 1.05 * (side === "right" ? 1 : -1);
 
       return {
         id: i,
@@ -248,7 +238,7 @@ export default function PieChart({
 
       if (labels.length <= 1) return;
 
-      const minSpacing = 20;
+      const minSpacing = 28; // Further increased spacing for better separation
 
       for (let i = 1; i < labels.length; i++) {
         const prevLabel = labels[i - 1];
@@ -261,8 +251,9 @@ export default function PieChart({
 
       if (labels.length > 2) {
         const bottomLabel = labels[labels.length - 1];
-        if (bottomLabel.pos[1] > height / 2 - 20) {
-          const offset = bottomLabel.pos[1] - (height / 2 - 20);
+        if (bottomLabel.pos[1] > chartHeight / 2 - 25) {
+          // Increased bottom padding
+          const offset = bottomLabel.pos[1] - (chartHeight / 2 - 25);
 
           const perLabelOffset = offset / (labels.length - 1);
 
@@ -287,9 +278,10 @@ export default function PieChart({
       })
       .attr("fill", "none")
       .attr("stroke", "#555")
-      .attr("stroke-width", 1)
+      .attr("stroke-width", 0.5)
       .attr("opacity", 0.5);
 
+    // Larger label text
     svg
       .selectAll("text.label")
       .data(adjustedPositions)
@@ -300,21 +292,25 @@ export default function PieChart({
         const [x, y] = d.pos;
         const side = d.side;
         const dataItem = d.data.data as any;
+        const name = dataItem.name;
 
-        return `<tspan x="${x}" y="${y}" text-anchor="${side === "right" ? "start" : "end"}">${dataItem.name.substring(0, 10)}</tspan>
-                <tspan x="${x}" y="${y + 14}" text-anchor="${side === "right" ? "start" : "end"}" font-size="10px">${formatPercent(dataItem.value)}</tspan>`;
+        return `<tspan x="${x}" y="${y}" text-anchor="${side === "right" ? "start" : "end"}" font-size="12px">${name}</tspan>
+                <tspan x="${x}" y="${y + 14}" text-anchor="${side === "right" ? "start" : "end"}" font-size="12px">${formatPercent(dataItem.value)}</tspan>`;
       })
       .attr("fill", "#333");
 
-    const legendRectSize = 12;
-    const legendSpacing = 5;
+    // Add compact legend
+    const legendRectSize = 8;
+    const legendSpacing = 3;
     const legendHeight = legendRectSize + legendSpacing;
 
-    const legendWidth = width! - 40;
+    // Position legend outside the main chart area
+    const legendWidth = chartWidth - 10;
 
-    const avgItemWidth = 80;
+    // Wider legend items to prevent overlap
+    const avgItemWidth = 80; // Increased width for legend items
     const legendItemsPerRow = Math.max(
-      2,
+      2, // Reduce to 2 items per row
       Math.floor(legendWidth / avgItemWidth),
     );
 
@@ -332,11 +328,12 @@ export default function PieChart({
 
         const x = -legendWidth / 2 + col * colWidth + 10;
 
+        // Increase spacing between legend rows
         const y =
-          height / 2 -
-          30 -
-          (data.length / legendItemsPerRow) * legendHeight +
-          row * legendHeight;
+          chartHeight / 2 -
+          30 - // More space from bottom
+          (data.length / legendItemsPerRow) * legendHeight * 1.5 + // Increased multiplier for more space
+          row * legendHeight * 1.5; // Increased vertical spacing
 
         return `translate(${x}, ${y})`;
       });
@@ -347,15 +344,16 @@ export default function PieChart({
       .attr("height", legendRectSize)
       .attr("fill", (d) => color(d.name));
 
-    // Add text to legend
     legend
       .append("text")
       .attr("x", legendRectSize + legendSpacing)
-      .attr("y", legendRectSize - legendSpacing + 2)
-      .attr("font-size", "10px")
-      .text((d) => {
+      .attr("y", legendRectSize - legendSpacing + 1)
+      .attr("font-size", "9px") // Increased font size
+      .text(function (d) {
+        // Shorter names for legend to prevent overlap
         const displayName =
-          d.name.length > 8 ? `${d.name.substring(0, 8)}...` : d.name;
+          d.name.length > 5 ? `${d.name.substring(0, 8)}...` : d.name;
+        // Shorter percentage representation
         return `${displayName} (${formatPercent(d.value)})`;
       });
   };
@@ -364,7 +362,7 @@ export default function PieChart({
     <div className="flex flex-col items-center">
       <div ref={chartRef} className="flex justify-center"></div>
       {data.length === 0 && (
-        <div className="text-gray-500 mt-8">No sentiment data available</div>
+        <div className="text-gray-500 mt-4 text-xs">No data available</div>
       )}
     </div>
   );
