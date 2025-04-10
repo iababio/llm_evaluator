@@ -1,36 +1,177 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# LLM Evaluation Platform
+
+Web app combining **Next.js** for the frontend and **FastAPI** for the backend to create a powerful AI-powered content evaluation platform.
+
+![LLM Evaluation Platform Dashboard](https://i.imgur.com/YHbwDaB.png)
+
+---
+
+## Features
+
+- **AI-Powered Content Analysis**: Analyze text content with state-of-the-art language models
+- **Sentiment Analysis**: Visualize the emotional tone of your content with interactive charts
+- **Authentication**: Secure user authentication via Clerk
+- **Real-time AI Suggestions**: Get content improvement suggestions from various LLMs
+- **Responsive UI**: Seamless experience across desktop and mobile devices
+- **Interactive Visualizations**: Multiple chart types including sunburst, pie, bar, and circle pack
+
+---
+
+## Technology Stack
+
+- **Frontend**: Next.js 14+ with React and TypeScript
+- **Backend**: Python FastAPI for high-performance API endpoints
+- **Authentication**: Clerk for user management
+- **AI Integration**: OpenAI API (GPT-4o, GPT-3.5-Turbo)
+- **Styling**: Tailwind CSS with Shadcn UI components
+- **State Management**: React hooks pattern
+- **Visualizations**: D3.js for interactive data visualizations
+
+---
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+- Node.js 18.x or later
+- Python 3.10 or later
+- OpenAI API key
+- Clerk account and credentials
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Environment Setup
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+1. Clone the repository:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+   ```bash
+   git clone <repository-url>
+   cd llm-evaluation-platform
+   ```
 
-## Learn More
+2. Create and configure environment variables:
 
-To learn more about Next.js, take a look at the following resources:
+   Create a `.env.local` file in the root directory and add your keys.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+3. Install frontend dependencies:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+   ```bash
+   cd frontend
+   npm install
+   ```
 
-## Deploy on Vercel
+4. Install backend dependencies:
+   ```bash
+   cd ../backend
+   pip install -r requirements.txt
+   ```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+---
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Running the Development Servers
+
+1. **Start the Next.js frontend:**
+
+   ```bash
+   cd frontend
+   npm run dev
+   ```
+
+2. **In a separate terminal, start the FastAPI backend:**
+
+   ```bash
+   cd backend
+   uvicorn main:app --reload
+   ```
+
+3. Open [http://localhost:3000](http://localhost:3000) to view the application in your browser.
+
+---
+
+## Application Structure
+
+- **Frontend**: Next.js
+- **Backend**: FastAPI
+
+---
+
+## Key Features Walkthrough
+
+### Sign-in Page
+
+The platform features a secure authentication system powered by Clerk, allowing users to sign in with email/password or social providers.
+
+![Sign-in Page](https://i.imgur.com/QsI9dPx.png)
+
+### Document Editor
+
+The document editor provides a clean interface for writing and editing content, with real-time word count and AI assistance.
+
+![Document Editor](https://i.imgur.com/1JfWgDm.png)
+
+### Sentiment Analysis
+
+Get comprehensive sentiment analysis of your content with interactive visualizations.
+
+![Sentiment Analysis](https://i.imgur.com/8JrQUPd.png)
+
+### Sunburst Chart
+
+The sunburst chart provides a hierarchical view of sentiment distribution in your content.
+
+![Sunburst Chart](https://i.imgur.com/KvdF29m.png)
+
+### Document Management
+
+Manage multiple documents in the left sidebar with search functionality.
+
+![Document Management](https://i.imgur.com/xLzG3CV.png)
+
+---
+
+## API Endpoints
+
+| Endpoint          | Method | Description                               |
+| ----------------- | ------ | ----------------------------------------- |
+| `/api/chat`       | POST   | Send messages to the LLM for conversation |
+| `/api/completion` | POST   | Get completion suggestions for text       |
+| `/api/sentiment`  | POST   | Analyze sentiment in provided text        |
+
+---
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit pull requests.
+
+1. Fork the repository
+2. Create your feature branch:
+   ```bash
+   git checkout -b feature/amazing-feature
+   ```
+3. Commit your changes:
+   ```bash
+   git commit -m 'Add some amazing feature'
+   ```
+4. Push to the branch:
+   ```bash
+   git push origin feature/amazing-feature
+   ```
+5. Open a Pull Request
+
+---
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+---
+
+## Acknowledgements
+
+- Next.js
+- FastAPI
+- OpenAI
+- Clerk
+- D3.js
+- Tailwind CSS
+- Shadcn UI
+
+> **Note**: The screenshots shown are from the demo version of the application. Your instance may vary depending on your content and configuration.
