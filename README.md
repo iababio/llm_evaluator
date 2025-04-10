@@ -99,7 +99,7 @@ Web app combining **Next.js** for the frontend and **FastAPI** for the backend t
 
 The platform features a secure authentication system powered by Clerk, allowing users to sign in with email/password or social providers.
 
-![Sign-in Page](https://i.imgur.com/QsI9dPx.png)
+![Sign-in Page](https://raw.githubusercontent.com/iababio/llm_evaluator/2b7ddc1cfd643a70aaa7342ba5d23f18c52bc532/public/signin.png)
 
 ### Document Editor
 
@@ -111,19 +111,25 @@ The document editor provides a clean interface for writing and editing content, 
 
 Get comprehensive sentiment analysis of your content with interactive visualizations.
 
-![Sentiment Analysis](https://i.imgur.com/8JrQUPd.png)
+![Sentiment Analysis](https://raw.githubusercontent.com/iababio/llm_evaluator/2b7ddc1cfd643a70aaa7342ba5d23f18c52bc532/public/sentiment.png)
 
 ### Sunburst Chart
 
 The sunburst chart provides a hierarchical view of sentiment distribution in your content.
 
-![Sunburst Chart](https://i.imgur.com/KvdF29m.png)
+![Sunburst Chart](https://raw.githubusercontent.com/iababio/llm_evaluator/2b7ddc1cfd643a70aaa7342ba5d23f18c52bc532/public/sunburst.png)
 
-### Document Management
+### Circle Chart
+
+The Circle chart provides a hierarchical view of sentiment distribution in your content.
+
+![Circle Chart](https://raw.githubusercontent.com/iababio/llm_evaluator/2b7ddc1cfd643a70aaa7342ba5d23f18c52bc532/public/circle.png)
+
+### Pie Chart
 
 Manage multiple documents in the left sidebar with search functionality.
 
-![Document Management](https://i.imgur.com/xLzG3CV.png)
+![Pie Chart](https://raw.githubusercontent.com/iababio/llm_evaluator/2b7ddc1cfd643a70aaa7342ba5d23f18c52bc532/public/pie.png)
 
 ---
 
