@@ -17,18 +17,6 @@ Web app combining **Next.js** for the frontend and **FastAPI** for the backend t
 
 ---
 
-## Technology Stack
-
-- **Frontend**: Next.js 14+ with React and TypeScript
-- **Backend**: Python FastAPI for high-performance API endpoints
-- **Authentication**: Clerk for user management
-- **AI Integration**: OpenAI API (GPT-4o, GPT-3.5-Turbo)
-- **Styling**: Tailwind CSS with Shadcn UI components
-- **State Management**: React hooks pattern
-- **Visualizations**: D3.js for interactive data visualizations
-
----
-
 ## Getting Started
 
 ### Prerequisites
