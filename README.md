@@ -1,3 +1,5 @@
+![Vercel Badge](https://deploy-badge.vercel.app/vercel/deploy-badge) ![License](https://img.shields.io/badge/license-MIT-blue)
+
 # LLM Evaluation Platform
 
 Web app combining **Next.js** for the frontend and **FastAPI** for the backend to create a powerful AI-powered content evaluation platform.
