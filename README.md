@@ -2,7 +2,7 @@
 
 Web app combining **Next.js** for the frontend and **FastAPI** for the backend to create a powerful AI-powered content evaluation platform.
 
-![LLM Evaluation Platform Dashboard](https://i.imgur.com/YHbwDaB.png)
+![LLM Evaluation Platform Dashboard](/public/dashboard.png)
 
 ---
 
@@ -83,12 +83,6 @@ Web app combining **Next.js** for the frontend and **FastAPI** for the backend t
 
 ## Key Features Walkthrough
 
-### Sign-in Page
-
-The platform features a secure authentication system powered by Clerk, allowing users to sign in with email/password or social providers.
-
-![Sign-in Page](https://raw.githubusercontent.com/iababio/llm_evaluator/2b7ddc1cfd643a70aaa7342ba5d23f18c52bc532/public/signin.png)
-
 ### Document Editor
 
 The document editor provides a clean interface for writing and editing content, with real-time word count and AI assistance.
@@ -99,25 +93,25 @@ The document editor provides a clean interface for writing and editing content, 
 
 Get comprehensive sentiment analysis of your content with interactive visualizations.
 
-![Sentiment Analysis](https://raw.githubusercontent.com/iababio/llm_evaluator/2b7ddc1cfd643a70aaa7342ba5d23f18c52bc532/public/sentiment.png)
+![Sentiment Analysis](/public/sentiment.png)
 
 ### Sunburst Chart
 
 The sunburst chart provides a hierarchical view of sentiment distribution in your content.
 
-![Sunburst Chart](https://raw.githubusercontent.com/iababio/llm_evaluator/2b7ddc1cfd643a70aaa7342ba5d23f18c52bc532/public/sunburst.png)
+![Sunburst Chart](/public/sunburst.png)
 
 ### Circle Chart
 
 The Circle chart provides a hierarchical view of sentiment distribution in your content.
 
-![Circle Chart](https://raw.githubusercontent.com/iababio/llm_evaluator/2b7ddc1cfd643a70aaa7342ba5d23f18c52bc532/public/circle.png)
+![Circle Chart](/public/circle.png)
 
 ### Pie Chart
 
 Manage multiple documents in the left sidebar with search functionality.
 
-![Pie Chart](https://raw.githubusercontent.com/iababio/llm_evaluator/2b7ddc1cfd643a70aaa7342ba5d23f18c52bc532/public/pie.png)
+![Pie Chart]/public/pie.png)
 
 ---
 
