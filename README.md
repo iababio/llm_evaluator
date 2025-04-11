@@ -95,12 +95,6 @@ Web app combining **Next.js** for the frontend and **FastAPI** for the backend t
 
 ## Key Features Walkthrough
 
-### Sign-in Page
-
-The platform features a secure authentication system powered by Clerk, allowing users to sign in with email/password or social providers.
-
-![Sign-in Page](https://raw.githubusercontent.com/iababio/llm_evaluator/2b7ddc1cfd643a70aaa7342ba5d23f18c52bc532/public/signin.png)
-
 ### Document Editor
 
 The document editor provides a clean interface for writing and editing content, with real-time word count and AI assistance.
