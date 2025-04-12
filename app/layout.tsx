@@ -1,8 +1,14 @@
+"use client";
+
 import React from "react";
 import "./globals.css";
 import { ClerkProvider } from "@clerk/nextjs";
 import type { Metadata } from "next";
 import { Inter, Epilogue } from "next/font/google";
+import { Toaster } from "@/components/ui/toaster";
+import UserSyncProvider from "@/components/auth/UserSyncProvider";
+import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -18,18 +24,17 @@ const epilogue = Epilogue({
   display: "swap",
 });
 
-export const metadata: Metadata = {
-  title: "LLM Evaluation",
-  description: "LLM evaluation platform",
-};
-
 export default function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`${inter.variable} ${epilogue.variable}`}>
+    <html
+      lang="en"
+      className={`${inter.variable} ${epilogue.variable}`}
+      suppressHydrationWarning
+    >
       <head />
       <body className="min-h-screen bg-background font-sans antialiased">
         <ClerkProvider
@@ -39,9 +44,37 @@ export default function RootLayout({
           afterSignInUrl="/chat"
           afterSignUpUrl="/chat"
         >
-          {children}
+          <UserSyncProvider>
+            {/* <ThemeProvider
+              attribute="class"
+              defaultTheme="system"
+              enableSystem
+              disableTransitionOnChange
+            > */}
+            {children}
+            <Toaster />
+            {/* </ThemeProvider> */}
+          </UserSyncProvider>
         </ClerkProvider>
       </body>
     </html>
+  );
+}
+
+export function ToastDemo() {
+  const { toast } = useToast();
+
+  return (
+    <Button
+      variant="outline"
+      onClick={() => {
+        toast({
+          title: "Scheduled: Catch up",
+          description: "Friday, February 10, 2023 at 5:57 PM",
+        });
+      }}
+    >
+      Show Toast
+    </Button>
   );
 }

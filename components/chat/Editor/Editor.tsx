@@ -15,6 +15,8 @@ interface EditorProps {
   isAnalyzing?: boolean;
   onSubmitToAI?: (text: string) => void;
   isAILoading?: boolean;
+  onSaveChat?: () => void; // Add this prop
+  hasUnsavedChanges?: boolean; // Add this prop
 }
 
 export default function Editor({
@@ -27,6 +29,8 @@ export default function Editor({
   isAnalyzing = false,
   onSubmitToAI,
   isAILoading = false,
+  onSaveChat, // Add this prop
+  hasUnsavedChanges = false, // Add this prop
 }: EditorProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -50,7 +54,12 @@ export default function Editor({
   return (
     <main className="flex-1 flex flex-col overflow-hidden">
       {/* Editor Toolbar */}
-      <EditorToolbar isEditing={isEditing} wordCount={wordCount} />
+      <EditorToolbar
+        isEditing={isEditing}
+        wordCount={wordCount}
+        onSaveChat={onSaveChat}
+        hasUnsavedChanges={hasUnsavedChanges}
+      />
 
       {/* Document Content */}
       <div className="flex-1 overflow-y-auto">

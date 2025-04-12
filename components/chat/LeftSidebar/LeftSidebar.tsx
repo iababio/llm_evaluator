@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Plus, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,82 +8,171 @@ import { UserResource } from "@clerk/types";
 import { motion, AnimatePresence } from "framer-motion";
 import DocumentList from "./DocumentList";
 import UserProfile from "./UserProfile";
+import { useChatHistory } from "@/hooks/useChatHistory";
+import { useAuth } from "@clerk/nextjs";
 
-interface Document {
-  id: string;
-  title: string;
-  date: string;
-  preview: string;
-}
+// Use the ChatHistoryItem interface from useChatHistory
+import type { ChatHistoryItem } from "@/hooks/useChatHistory";
 
 interface LeftSidebarProps {
   isVisible: boolean;
-  selectedDocument: string | null;
-  onSelectDocument: (documentId: string | null) => void;
+  selectedChat: string | null;
+  onSelectChat: (chatId: string | null) => void;
+  onNewChat: () => void;
   user: UserResource;
 }
 
 export default function LeftSidebar({
   isVisible,
-  selectedDocument,
-  onSelectDocument,
+  selectedChat,
+  onSelectChat,
+  onNewChat,
   user,
 }: LeftSidebarProps) {
+  // Add a ref to track initialization
+  const initialized = useRef(false);
+  const { isSignedIn, isLoaded } = useAuth();
+
+  const { chatHistory, isLoading, error, fetchChatHistory, deleteChat } =
+    useChatHistory();
+
+  const [tokenAvailable, setTokenAvailable] = useState(false);
+  const [authTested, setAuthTested] = useState(false);
+  const hasFetchedRef = useRef(false);
+
+  // Check auth status internally
+  const checkAuthStatus = async () => {
+    try {
+      const response = await fetch("/api/auth/check");
+      const result = await response.json();
+      return result;
+    } catch (error) {
+      console.error("Auth check error:", error);
+      return null;
+    }
+  };
+
+  // Test auth status first
+  useEffect(() => {
+    if (isLoaded && isSignedIn && !authTested) {
+      checkAuthStatus().then((result) => {
+        setAuthTested(true);
+        if (result?.clerk_id) {
+          console.log("Auth verified, fetching chat history");
+          setTokenAvailable(true);
+          fetchChatHistory();
+        } else {
+          setTokenAvailable(false);
+          console.error("Auth check failed, not fetching chat history");
+        }
+      });
+    }
+  }, [isLoaded, isSignedIn, authTested, fetchChatHistory]);
+
+  // // Add debug info component
+  // const AuthDebugPanel = () => {
+  //   if (process.env.NODE_ENV === 'production') return null;
+
+  //   return (
+  //     <div className="p-2 text-xs border-t bg-yellow-50 text-yellow-800">
+  //       <p>Debug: {isLoaded ? "✅" : "❌"} Loaded</p>
+  //       <p>Sign-in: {isSignedIn ? "✅" : "❌"} Signed</p>
+  //       <p>Token: {tokenAvailable ? "✅" : "❌"} Available</p>
+  //       <p>Tested: {authTested ? "✅" : "❌"} Tested</p>
+  //       <button
+  //         onClick={() => checkAuthStatus()}
+  //         className="underline text-blue-500 mt-1"
+  //       >
+  //         Test Auth
+  //       </button>
+  //     </div>
+  //   );
+  // };
+
   // Local state for search functionality
   const [searchQuery, setSearchQuery] = useState("");
 
-  // Mock data for documents (replace with actual data fetching logic)
-  const [documents, setDocuments] = useState<Document[]>([
-    {
-      id: "1",
-      title: "Project Proposal",
-      date: "2025-03-28",
-      preview:
-        "This document outlines the project goals, timeline, and budget requirements.",
-    },
-    {
-      id: "2",
-      title: "Meeting Notes",
-      date: "2025-03-25",
-      preview:
-        "Notes from the weekly team meeting including action items and decisions.",
-    },
-    {
-      id: "3",
-      title: "Research Findings",
-      date: "2025-03-20",
-      preview:
-        "Summary of research findings from user interviews and competitive analysis.",
-    },
-  ]);
+  // Only fetch chat history once when component mounts
+  useEffect(() => {
+    if (isLoaded && isSignedIn && !initialized.current) {
+      console.log("LeftSidebar: Initial fetch of chat history");
+      initialized.current = true;
+      fetchChatHistory();
+    }
+  }, [isLoaded, isSignedIn, fetchChatHistory]);
 
-  // Filter documents based on search query
-  const filteredDocuments = documents.filter(
-    (doc) =>
-      doc.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      doc.preview.toLowerCase().includes(searchQuery.toLowerCase()),
-  );
+  // Refresh chat history if there was an error
+  useEffect(() => {
+    if (error) {
+      // Add a delay before retrying
+      const retryTimer = setTimeout(() => {
+        fetchChatHistory();
+      }, 5000);
 
-  // Handle creating a new document
-  const handleNewDocument = () => {
-    const newDoc = {
-      id: `doc-${Date.now()}`,
-      title: "Untitled Document",
-      date: new Date().toISOString().split("T")[0],
-      preview: "Empty document",
+      return () => clearTimeout(retryTimer);
+    }
+  }, [error, fetchChatHistory]);
+
+  // Add this effect for debugging
+  useEffect(() => {
+    console.log("Chat history data:", chatHistory);
+    console.log("Chat history type:", typeof chatHistory);
+    console.log("Is Array:", Array.isArray(chatHistory));
+  }, [chatHistory]);
+
+  // Filter chats safely
+  const filteredChats = React.useMemo(() => {
+    // Safety check: make sure chatHistory exists and is an array
+    if (!chatHistory || !Array.isArray(chatHistory)) {
+      return [];
+    }
+
+    // If no search query, return all chats
+    if (!searchQuery) {
+      return chatHistory;
+    }
+
+    // Filter with search
+    return chatHistory.filter(
+      (chat) =>
+        chat &&
+        chat.title &&
+        typeof chat.title === "string" &&
+        chat.title.toLowerCase().includes(searchQuery.toLowerCase()),
+    );
+  }, [chatHistory, searchQuery]);
+
+  console.log("Filtered chats:", filteredChats);
+
+  // Map chat histories to document format with defensive coding
+  const chatDocuments = filteredChats.map((chat) => {
+    // Ensure all required fields have valid values
+    const id = chat?.id || "";
+    const title = chat?.title || "Untitled Chat";
+    const createdAt = chat?.created_at ? new Date(chat.created_at) : new Date();
+    const preview = chat?.last_message || "No messages";
+
+    return {
+      id,
+      title,
+      date: createdAt.toLocaleDateString(),
+      preview,
     };
-
-    setDocuments([newDoc, ...documents]);
-    onSelectDocument(newDoc.id);
-  };
+  });
 
   // Handle document deletion
-  const handleDeleteDocument = (e: React.MouseEvent, docId: string) => {
+  const handleDeleteDocument = async (e: React.MouseEvent, chatId: string) => {
     e.stopPropagation(); // Prevent triggering document selection
-    setDocuments(documents.filter((doc) => doc.id !== docId));
 
-    if (selectedDocument === docId) {
-      onSelectDocument(null);
+    if (confirm("Are you sure you want to delete this chat?")) {
+      const success = await deleteChat(chatId);
+
+      if (success) {
+        // If the deleted chat was selected, clear the selection
+        if (selectedChat === chatId) {
+          onSelectChat(null);
+        }
+      }
     }
   };
 
@@ -124,31 +213,28 @@ export default function LeftSidebar({
 
   return (
     <>
-      {/* Left Sidebar for Documents */}
-      <motion.aside
-        className="absolute md:relative z-20 md:z-0 border-r bg-white h-full flex flex-col"
-        variants={sidebarVariants}
-        initial={isVisible ? "show" : "hide"}
-        animate={isVisible ? "show" : "hide"}
+      {/* Left Sidebar for Chat History */}
+      <aside
+        className={`
+          ${isVisible ? "translate-x-0" : "-translate-x-full"} 
+          md:translate-x-0
+          w-64
+          absolute md:relative z-20 md:z-0 border-r bg-white h-full 
+          transition-all duration-300 ease-in-out flex flex-col
+        `}
       >
         {/* Sidebar Header */}
-        <motion.div
-          className="p-4 border-b flex justify-between items-center shrink-0"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.1 }}
-        >
-          <h2 className="font-medium">Documents</h2>
+        <div className="p-4 border-b flex justify-between items-center shrink-0">
+          <h2 className="font-medium">Chat History</h2>
           <Button
             variant="ghost"
             size="icon"
-            onClick={handleNewDocument}
-            title="Create new document"
+            onClick={onNewChat}
+            title="Start new chat"
           >
             <Plus className="h-4 w-4" />
           </Button>
-        </motion.div>
-
+        </div>
         {/* User Profile */}
         <motion.div
           initial={{ opacity: 0, y: -10 }}
@@ -160,7 +246,6 @@ export default function LeftSidebar({
 
         {/* Search Box */}
         <motion.div
-          className="p-2 border-b shrink-0"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.3 }}
@@ -171,52 +256,70 @@ export default function LeftSidebar({
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-8 h-8 text-sm"
-              placeholder="Search documents"
+              placeholder="Search chats"
             />
           </div>
         </motion.div>
 
-        {/* Document List */}
-        <motion.div
-          className="flex-1 overflow-y-auto"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.4 }}
-        >
-          {filteredDocuments.length === 0 ? (
-            <motion.div
-              className="p-4 text-center text-gray-500 text-sm"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-            >
-              No documents found
-            </motion.div>
+        {/* Chat History List */}
+        <div className="flex-1 overflow-y-auto">
+          {!isLoaded ? (
+            <div className="p-4 text-center">
+              <div className="animate-spin h-5 w-5 border-2 border-blue-500 border-t-transparent rounded-full mx-auto mb-2"></div>
+              <p className="text-sm text-gray-500">Loading user...</p>
+            </div>
+          ) : !isSignedIn ? (
+            <div className="p-4 text-center text-gray-500 text-sm">
+              Please sign in to view chat history
+            </div>
+          ) : isLoading ? (
+            <div className="p-4 text-center">
+              <div className="animate-spin h-5 w-5 border-2 border-blue-500 border-t-transparent rounded-full mx-auto mb-2"></div>
+              <p className="text-sm text-gray-500">Loading chats...</p>
+            </div>
+          ) : error ? (
+            <div className="p-4 text-center text-red-500 text-sm">
+              Error loading chats: {error}
+              <Button
+                variant="link"
+                size="sm"
+                className="mt-2 mx-auto block"
+                onClick={() => fetchChatHistory()}
+              >
+                Retry
+              </Button>
+            </div>
+          ) : filteredChats.length === 0 ? (
+            <div className="p-4 text-center text-gray-500 text-sm">
+              {searchQuery ? "No chats found" : "No chat history yet"}
+              <Button
+                variant="link"
+                size="sm"
+                className="mt-2 mx-auto block"
+                onClick={onNewChat}
+              >
+                Start a new chat
+              </Button>
+            </div>
           ) : (
-            <AnimatePresence>
-              <DocumentList
-                documents={filteredDocuments}
-                selectedDocumentId={selectedDocument}
-                onSelectDocument={onSelectDocument}
-                onDeleteDocument={handleDeleteDocument}
-              />
-            </AnimatePresence>
+            <DocumentList
+              documents={chatDocuments}
+              selectedDocumentId={selectedChat}
+              onSelectDocument={onSelectChat}
+              onDeleteDocument={handleDeleteDocument}
+            />
           )}
-        </motion.div>
-      </motion.aside>
+        </div>
+        {/* <AuthDebugPanel /> */}
+      </aside>
 
-      {/* Mobile Overlay with animation */}
-      <AnimatePresence>
-        {isVisible && (
-          <motion.div
-            className="md:hidden fixed inset-0 bg-black z-10"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 0.2 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            onClick={() => onSelectDocument(null)}
-          />
-        )}
-      </AnimatePresence>
+      {/* Mobile Overlay */}
+      {isVisible && (
+        <div
+          className="md:hidden fixed inset-0 bg-black bg-opacity-20 z-10"
+          onClick={() => onSelectChat(null)}
+        />
+      )}
     </>
   );
 }

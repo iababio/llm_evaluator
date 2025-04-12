@@ -2,7 +2,7 @@
 
 import React from "react";
 import { Button } from "@/components/ui/button";
-import { Clock, Trash2, FileText } from "lucide-react";
+import { Clock, Trash2, MessageSquare } from "lucide-react";
 
 interface Document {
   id: string;
@@ -29,12 +29,14 @@ export default function DocumentList({
       {documents.map((doc) => (
         <div
           key={doc.id}
-          className={`p-3 cursor-pointer hover:bg-gray-50 group ${selectedDocumentId === doc.id ? "bg-gray-100" : ""}`}
+          className={`p-3 cursor-pointer hover:bg-gray-50 group ${
+            selectedDocumentId === doc.id ? "bg-gray-100" : ""
+          }`}
           onClick={() => onSelectDocument(doc.id)}
         >
           <div className="flex justify-between items-start">
             <div className="flex items-start gap-2">
-              <FileText className="h-4 w-4 mt-0.5 text-gray-400" />
+              <MessageSquare className="h-4 w-4 mt-0.5 text-gray-400" />
               <h3 className="font-medium text-sm line-clamp-1 flex-1">
                 {doc.title}
               </h3>

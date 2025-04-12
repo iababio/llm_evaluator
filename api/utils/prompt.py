@@ -1,75 +1,42 @@
 import json
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Dict, Any, Union
 from .types import ClientAttachment, ToolInvocation
 
+ClientMessage = Union[Dict[str, Any], Dict[str, str]]
 
-class ClientMessage(BaseModel):
-    role: str
-    content: str
-    experimental_attachments: Optional[List[ClientAttachment]] = None
-    toolInvocations: Optional[List[ToolInvocation]] = None
-
-
-def convert_to_openai_messages(messages: List[ClientMessage]):
-    openai_messages = []
-
+def convert_to_openai_messages(messages: List[ClientMessage]) -> List[Dict[str, Any]]:
+    """
+    Convert client messages to OpenAI messages format.
+    Ensures we never return an empty array.
+    """
+    if not messages:
+        # Default message if none provided
+        return [{"role": "system", "content": "You are a helpful assistant."}]
+    
+    result = []
+    
     for message in messages:
-        parts = []
-
-        parts.append({
-            'type': 'text',
-            'text': message.content
-        })
-
-        if (message.experimental_attachments):
-            for attachment in message.experimental_attachments:
-                if (attachment.contentType.startswith('image')):
-                    parts.append({
-                        'type': 'image_url',
-                        'image_url': {
-                            'url': attachment.url
-                        }
-                    })
-
-                elif (attachment.contentType.startswith('text')):
-                    parts.append({
-                        'type': 'text',
-                        'text': attachment.url
-                    })
-
-        if (message.toolInvocations):
-            tool_calls = [
-                {
-                    'id': tool_invocation.toolCallId,
-                    'type': 'function',
-                    'function': {
-                        'name': tool_invocation.toolName,
-                        'arguments': json.dumps(tool_invocation.args)
-                    }
-                }
-                for tool_invocation in message.toolInvocations]
-
-            openai_messages.append({
-                "role": 'assistant',
-                "tool_calls": tool_calls
-            })
-
-            tool_results = [
-                {
-                    'role': 'tool',
-                    'content': json.dumps(tool_invocation.result),
-                    'tool_call_id': tool_invocation.toolCallId
-                }
-                for tool_invocation in message.toolInvocations]
-
-            openai_messages.extend(tool_results)
-
+        # Skip messages without a role
+        if "role" not in message:
             continue
-
-        openai_messages.append({
-            "role": message.role,
-            "content": parts
-        })
-
-    return openai_messages
+            
+        # Skip messages without content (or with empty content)
+        content = message.get("content")
+        if content is None or (isinstance(content, str) and not content.strip()):
+            continue
+            
+        openai_message = {"role": message["role"], "content": content}
+        
+        # Add optional fields if present
+        for field in ["name", "function_call", "tool_call_id", "tool_calls"]:
+            if field in message:
+                openai_message[field] = message[field]
+                
+        result.append(openai_message)
+    
+    # Ensure we have at least one message
+    if not result:
+        return [{"role": "system", "content": "You are a helpful assistant."}]
+        
+    return result

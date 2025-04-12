@@ -19,12 +19,20 @@
       }
     ],
     "paths": {
-			"@/*": ["./*"],
-			"@components/*": ["./components/*"],
-			"@pages/*": ["./app/*"],
-			"@utils/*": ["./utils/*"]
-		}
+      "@/*": ["./*"],
+      "@components/*": ["./components/*"],
+      "@pages/*": ["./app/*"],
+      "@utils/*": ["./utils/*"]
+    }
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts", "tailwind.config.js"],
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts",
+    "tailwind.config.js",
+    "components/theme-provider.tsx",
+    "components/theme-provider.tsx"
+  ],
   "exclude": ["node_modules"]
 }

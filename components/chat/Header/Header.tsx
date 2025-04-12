@@ -1,24 +1,25 @@
 "use client";
 
 import React from "react";
-import { UserButton } from "@clerk/nextjs";
 import {
-  MenuIcon,
-  PanelLeftIcon,
-  PanelRightIcon,
-  Edit2Icon,
+  Menu,
+  ChevronLeft,
+  PanelRight,
+  Edit,
   Eye,
+  MessageSquare,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import DocumentActions from "./DocumentActions";
+import { SignOutButton } from "@clerk/nextjs";
 
 interface HeaderProps {
   showLeftSidebar: boolean;
-  setShowLeftSidebar: (show: boolean) => void;
+  setShowLeftSidebar: (value: boolean) => void;
   showRightSidebar: boolean;
-  setShowRightSidebar: (show: boolean) => void;
+  setShowRightSidebar: (value: boolean) => void;
   isEditing: boolean;
-  setIsEditing: (editing: boolean) => void;
+  setIsEditing: (value: boolean) => void;
+  currentChatTitle?: string;
 }
 
 export default function Header({
@@ -28,42 +29,60 @@ export default function Header({
   setShowRightSidebar,
   isEditing,
   setIsEditing,
+  currentChatTitle,
 }: HeaderProps) {
   return (
-    <header className="h-14 border-b flex items-center justify-between px-4 shrink-0">
-      {/* Left section: Logo and toggles */}
-      <div className="flex items-center gap-2">
+    <header className="border-b bg-white flex justify-between items-center px-4 py-2">
+      <div className="flex items-center">
         <Button
+          onClick={() => setShowLeftSidebar(!showLeftSidebar)}
           variant="ghost"
           size="icon"
-          onClick={() => setShowLeftSidebar(!showLeftSidebar)}
-          className="text-gray-500"
-          aria-label="Toggle left sidebar"
-          data-state={showLeftSidebar ? "active" : "inactive"}
+          className="mr-2"
         >
-          <PanelLeftIcon className="h-5 w-5" />
+          {showLeftSidebar ? <ChevronLeft /> : <Menu />}
         </Button>
-
-        <div className="font-semibold text-lg">LLM Evaluation</div>
+        <div className="flex items-center gap-2">
+          <MessageSquare className="h-5 w-5 text-gray-500" />
+          <h1 className="text-lg font-medium">
+            {currentChatTitle || "New Chat"}
+          </h1>
+        </div>
       </div>
 
-      {/* Middle section: Document actions */}
-      <DocumentActions isEditing={isEditing} setIsEditing={setIsEditing} />
-
-      {/* Right section: User profile and right sidebar toggle */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center space-x-2">
         <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => setShowRightSidebar(!showRightSidebar)}
-          className="text-gray-500"
-          aria-label="Toggle right sidebar"
-          data-state={showRightSidebar ? "active" : "inactive"}
+          onClick={() => setIsEditing(!isEditing)}
+          variant="outline"
+          size="sm"
+          className="flex items-center gap-1"
         >
-          <PanelRightIcon className="h-5 w-5" />
+          {isEditing ? (
+            <>
+              <Eye className="h-4 w-4" />
+              <span className="hidden sm:inline">Preview</span>
+            </>
+          ) : (
+            <>
+              <Edit className="h-4 w-4" />
+              <span className="hidden sm:inline">Edit</span>
+            </>
+          )}
         </Button>
 
-        <UserButton afterSignOutUrl="/sign-in" />
+        <Button
+          onClick={() => setShowRightSidebar(!showRightSidebar)}
+          variant="ghost"
+          size="icon"
+        >
+          <PanelRight />
+        </Button>
+
+        <SignOutButton>
+          <Button variant="outline" size="sm">
+            Sign Out
+          </Button>
+        </SignOutButton>
       </div>
     </header>
   );
