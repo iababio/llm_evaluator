@@ -31,7 +31,7 @@ export default function LeftSidebar({
 }: LeftSidebarProps) {
   // Add a ref to track initialization
   const initialized = useRef(false);
-  const { isSignedIn, isLoaded } = useAuth();
+  const { isSignedIn, isLoaded, getToken } = useAuth();
 
   const { chatHistory, isLoading, error, fetchChatHistory, deleteChat } =
     useChatHistory();
@@ -39,6 +39,9 @@ export default function LeftSidebar({
   const [tokenAvailable, setTokenAvailable] = useState(false);
   const [authTested, setAuthTested] = useState(false);
   const hasFetchedRef = useRef(false);
+
+  // Local state for search functionality
+  const [searchQuery, setSearchQuery] = useState("");
 
   // Check auth status internally
   const checkAuthStatus = async () => {
@@ -52,45 +55,127 @@ export default function LeftSidebar({
     }
   };
 
-  // Test auth status first
+  // Enhanced token checking inside the useEffect
   useEffect(() => {
     if (isLoaded && isSignedIn && !authTested) {
-      checkAuthStatus().then((result) => {
-        setAuthTested(true);
-        if (result?.clerk_id) {
-          console.log("Auth verified, fetching chat history");
-          setTokenAvailable(true);
-          fetchChatHistory();
-        } else {
+      // First check if we can get a token
+      const checkToken = async () => {
+        try {
+          if (user && user.id) {
+            console.log("User ID:", user.id);
+          }
+
+          // Try different approaches to get a token
+          let token = null;
+          let tokenMethod = "";
+
+          try {
+            // Try the default approach first
+            token = await getToken();
+            tokenMethod = "default";
+          } catch (e) {
+            console.error("Error getting token with default method:", e);
+
+            // Try with template parameter
+            try {
+              token = await getToken({ template: "default" });
+              tokenMethod = "template:default";
+            } catch (e2) {
+              console.error("Error getting token with template=default:", e2);
+
+              // Try with JWT template
+              try {
+                token = await getToken({ template: "jwt" });
+                tokenMethod = "template:jwt";
+              } catch (e3) {
+                console.error("Error getting token with template=jwt:", e3);
+              }
+            }
+          }
+
+          if (token) {
+            console.log(
+              `Got token using ${tokenMethod}: ${token.substring(0, 10)}...`,
+            );
+
+            // Make a diagnostic request to debug endpoint
+            console.log("Making diagnostic request to /api/auth-debug");
+            const diagResponse = await fetch("/api/auth-debug", {
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+            });
+
+            const diagData = await diagResponse.json();
+            console.log("Auth debug response:", diagData);
+
+            // Now try the auth check endpoint
+            const authCheckResponse = await fetch("/api/auth/check", {
+              headers: {
+                Authorization: `Bearer ${token}`,
+                "X-Request-Id": `sidebar-auth-${Date.now()}`,
+              },
+            });
+
+            const authCheckResult = await authCheckResponse.json();
+            console.log("Auth check result:", authCheckResult);
+
+            setAuthTested(true);
+            if (authCheckResult?.authenticated) {
+              console.log("Auth verified, fetching chat history");
+              setTokenAvailable(true);
+
+              // Try fetching chat history with explicit headers
+              try {
+                console.log("Explicitly fetching chat history with token");
+                const chatResponse = await fetch("/api/chat-history", {
+                  headers: {
+                    Authorization: `Bearer ${token}`,
+                    "X-Request-Id": `manual-fetch-${Date.now()}`,
+                  },
+                });
+
+                if (chatResponse.ok) {
+                  const chats = await chatResponse.json();
+                  console.log(
+                    `Successfully fetched ${chats.length} chats manually`,
+                  );
+                  // Let the hook handle the actual fetch
+                  fetchChatHistory();
+                } else {
+                  console.error(
+                    "Manual chat history fetch failed:",
+                    await chatResponse.text(),
+                  );
+                  // Still try the regular fetch
+                  fetchChatHistory();
+                }
+              } catch (fetchError) {
+                console.error(
+                  "Error in manual chat history fetch:",
+                  fetchError,
+                );
+                fetchChatHistory();
+              }
+            } else {
+              setTokenAvailable(false);
+              console.error("Auth check failed, not fetching chat history");
+            }
+          } else {
+            setTokenAvailable(false);
+            setAuthTested(true);
+            console.error("Could not obtain a token with any method");
+          }
+        } catch (error) {
+          console.error("Auth check error:", error);
+          setAuthTested(true);
           setTokenAvailable(false);
-          console.error("Auth check failed, not fetching chat history");
         }
-      });
+      };
+
+      checkToken();
     }
-  }, [isLoaded, isSignedIn, authTested, fetchChatHistory]);
-
-  // // Add debug info component
-  // const AuthDebugPanel = () => {
-  //   if (process.env.NODE_ENV === 'production') return null;
-
-  //   return (
-  //     <div className="p-2 text-xs border-t bg-yellow-50 text-yellow-800">
-  //       <p>Debug: {isLoaded ? "✅" : "❌"} Loaded</p>
-  //       <p>Sign-in: {isSignedIn ? "✅" : "❌"} Signed</p>
-  //       <p>Token: {tokenAvailable ? "✅" : "❌"} Available</p>
-  //       <p>Tested: {authTested ? "✅" : "❌"} Tested</p>
-  //       <button
-  //         onClick={() => checkAuthStatus()}
-  //         className="underline text-blue-500 mt-1"
-  //       >
-  //         Test Auth
-  //       </button>
-  //     </div>
-  //   );
-  // };
-
-  // Local state for search functionality
-  const [searchQuery, setSearchQuery] = useState("");
+  }, [isLoaded, isSignedIn, authTested, fetchChatHistory, user, getToken]);
 
   // Only fetch chat history once when component mounts
   useEffect(() => {
@@ -100,25 +185,6 @@ export default function LeftSidebar({
       fetchChatHistory();
     }
   }, [isLoaded, isSignedIn, fetchChatHistory]);
-
-  // Refresh chat history if there was an error
-  useEffect(() => {
-    if (error) {
-      // Add a delay before retrying
-      const retryTimer = setTimeout(() => {
-        fetchChatHistory();
-      }, 5000);
-
-      return () => clearTimeout(retryTimer);
-    }
-  }, [error, fetchChatHistory]);
-
-  // Add this effect for debugging
-  useEffect(() => {
-    console.log("Chat history data:", chatHistory);
-    console.log("Chat history type:", typeof chatHistory);
-    console.log("Is Array:", Array.isArray(chatHistory));
-  }, [chatHistory]);
 
   // Filter chats safely
   const filteredChats = React.useMemo(() => {
@@ -141,8 +207,6 @@ export default function LeftSidebar({
         chat.title.toLowerCase().includes(searchQuery.toLowerCase()),
     );
   }, [chatHistory, searchQuery]);
-
-  console.log("Filtered chats:", filteredChats);
 
   // Map chat histories to document format with defensive coding
   const chatDocuments = filteredChats.map((chat) => {
@@ -176,65 +240,43 @@ export default function LeftSidebar({
     }
   };
 
-  // Animation variants
-  const sidebarVariants = {
-    show: {
-      x: 0,
-      opacity: 1,
-      width: "16rem", // w-64
-      transition: {
-        type: "spring",
-        stiffness: 300,
-        damping: 30,
-      },
-    },
-    hide: {
-      x: "-100%",
-      opacity: 0,
-      width: 0,
-      transition: {
-        duration: 0.3,
-      },
-    },
-  };
-
-  // Animation variants for staggered children
-  const listItemVariants = {
-    hidden: { opacity: 0, x: -20 },
-    visible: (i: number) => ({
-      opacity: 1,
-      x: 0,
-      transition: {
-        delay: i * 0.1,
-        duration: 0.3,
-      },
-    }),
-  };
-
   return (
     <>
       {/* Left Sidebar for Chat History */}
-      <aside
-        className={`
-          ${isVisible ? "translate-x-0" : "-translate-x-full"} 
-          md:translate-x-0
-          w-64
-          absolute md:relative z-20 md:z-0 border-r bg-white h-full 
-          transition-all duration-300 ease-in-out flex flex-col
-        `}
+      <motion.aside
+        initial={{ x: "-100%", opacity: 0 }}
+        animate={{
+          x: isVisible ? 0 : "-100%",
+          opacity: isVisible ? 1 : 0,
+          width: isVisible ? "16rem" : 0,
+        }}
+        transition={{
+          type: "spring",
+          stiffness: 300,
+          damping: 30,
+        }}
+        className="absolute md:relative z-20 md:z-0 border-r bg-white h-full flex flex-col"
       >
         {/* Sidebar Header */}
-        <div className="p-4 border-b flex justify-between items-center shrink-0">
+        <motion.div
+          className="p-4 border-b flex justify-between items-center shrink-0"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.1 }}
+        >
           <h2 className="font-medium">Chat History</h2>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onNewChat}
-            title="Start new chat"
-          >
-            <Plus className="h-4 w-4" />
-          </Button>
-        </div>
+          <motion.div whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onNewChat}
+              title="Start new chat"
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+          </motion.div>
+        </motion.div>
+
         {/* User Profile */}
         <motion.div
           initial={{ opacity: 0, y: -10 }}
@@ -246,6 +288,7 @@ export default function LeftSidebar({
 
         {/* Search Box */}
         <motion.div
+          className="p-2 border-b shrink-0"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.3 }}
@@ -261,65 +304,124 @@ export default function LeftSidebar({
           </div>
         </motion.div>
 
-        {/* Chat History List */}
-        <div className="flex-1 overflow-y-auto">
-          {!isLoaded ? (
-            <div className="p-4 text-center">
-              <div className="animate-spin h-5 w-5 border-2 border-blue-500 border-t-transparent rounded-full mx-auto mb-2"></div>
-              <p className="text-sm text-gray-500">Loading user...</p>
-            </div>
-          ) : !isSignedIn ? (
-            <div className="p-4 text-center text-gray-500 text-sm">
-              Please sign in to view chat history
-            </div>
-          ) : isLoading ? (
-            <div className="p-4 text-center">
-              <div className="animate-spin h-5 w-5 border-2 border-blue-500 border-t-transparent rounded-full mx-auto mb-2"></div>
-              <p className="text-sm text-gray-500">Loading chats...</p>
-            </div>
-          ) : error ? (
-            <div className="p-4 text-center text-red-500 text-sm">
-              Error loading chats: {error}
-              <Button
-                variant="link"
-                size="sm"
-                className="mt-2 mx-auto block"
-                onClick={() => fetchChatHistory()}
+        {/* Chat History List with state-based content */}
+        <motion.div
+          className="flex-1 overflow-y-auto"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.4 }}
+        >
+          <AnimatePresence mode="wait">
+            {!isLoaded ? (
+              <motion.div
+                key="loading-user"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="p-4 text-center"
               >
-                Retry
-              </Button>
-            </div>
-          ) : filteredChats.length === 0 ? (
-            <div className="p-4 text-center text-gray-500 text-sm">
-              {searchQuery ? "No chats found" : "No chat history yet"}
-              <Button
-                variant="link"
-                size="sm"
-                className="mt-2 mx-auto block"
-                onClick={onNewChat}
+                <div className="animate-spin h-5 w-5 border-2 border-blue-500 border-t-transparent rounded-full mx-auto mb-2"></div>
+                <p className="text-sm text-gray-500">Loading user...</p>
+              </motion.div>
+            ) : !isSignedIn ? (
+              <motion.div
+                key="sign-in"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="p-4 text-center text-gray-500 text-sm"
               >
-                Start a new chat
-              </Button>
-            </div>
-          ) : (
-            <DocumentList
-              documents={chatDocuments}
-              selectedDocumentId={selectedChat}
-              onSelectDocument={onSelectChat}
-              onDeleteDocument={handleDeleteDocument}
-            />
-          )}
-        </div>
-        {/* <AuthDebugPanel /> */}
-      </aside>
+                Please sign in to view chat history
+              </motion.div>
+            ) : isLoading ? (
+              <motion.div
+                key="loading-chats"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="p-4 text-center"
+              >
+                <div className="animate-spin h-5 w-5 border-2 border-blue-500 border-t-transparent rounded-full mx-auto mb-2"></div>
+                <p className="text-sm text-gray-500">Loading chats...</p>
+              </motion.div>
+            ) : error ? (
+              <motion.div
+                key="error"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="p-4 text-center text-red-500 text-sm"
+              >
+                Error loading chats: {error}
+                <motion.div
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  <Button
+                    variant="link"
+                    size="sm"
+                    className="mt-2 mx-auto block"
+                    onClick={() => fetchChatHistory()}
+                  >
+                    Retry
+                  </Button>
+                </motion.div>
+              </motion.div>
+            ) : filteredChats.length === 0 ? (
+              <motion.div
+                key="empty"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="p-4 text-center text-gray-500 text-sm"
+              >
+                {searchQuery ? "No chats found" : "No chat history yet"}
+                <motion.div
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  <Button
+                    variant="link"
+                    size="sm"
+                    className="mt-2 mx-auto block"
+                    onClick={onNewChat}
+                  >
+                    Start a new chat
+                  </Button>
+                </motion.div>
+              </motion.div>
+            ) : (
+              <motion.div
+                key="chat-list"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+              >
+                <DocumentList
+                  documents={chatDocuments}
+                  selectedDocumentId={selectedChat}
+                  onSelectDocument={onSelectChat}
+                  onDeleteDocument={handleDeleteDocument}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </motion.div>
+      </motion.aside>
 
-      {/* Mobile Overlay */}
-      {isVisible && (
-        <div
-          className="md:hidden fixed inset-0 bg-black bg-opacity-20 z-10"
-          onClick={() => onSelectChat(null)}
-        />
-      )}
+      {/* Mobile Overlay with animation */}
+      <AnimatePresence>
+        {isVisible && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 0.2 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="md:hidden fixed inset-0 bg-black z-10"
+            onClick={() => onSelectChat(null)}
+          />
+        )}
+      </AnimatePresence>
     </>
   );
 }

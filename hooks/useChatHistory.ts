@@ -1,26 +1,26 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "@clerk/nextjs";
+import { clerkClient } from "@clerk/nextjs/server";
 
 export interface ChatHistoryItem {
   id: string;
   title: string;
+  clerk_id: string;
   created_at: string;
-  updated_at?: string;
+  updated_at: string;
   last_message?: string;
-  [key: string]: any;
+  messages: Array<{
+    id?: string;
+    role: string;
+    content: string;
+  }>;
 }
 
-export interface ChatDetail {
-  id: string;
-  title: string;
-  messages: Array<any>;
-  created_at: string;
-  updated_at?: string;
-  [key: string]: any;
+export interface ChatDetail extends ChatHistoryItem {
+  metadata?: Record<string, any>;
 }
 
 export function useChatHistory() {
-  // Add refs to track request states and prevent duplicate fetches
   const hasInitiallyFetched = useRef(false);
   const fetchInProgressRef = useRef(false);
   const lastFetchTimeRef = useRef(0);
@@ -30,7 +30,7 @@ export function useChatHistory() {
   const [currentChat, setCurrentChat] = useState<ChatDetail | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { getToken, isSignedIn } = useAuth();
+  const { getToken, isSignedIn, userId } = useAuth();
 
   // Create an authenticated fetch function
   const authFetch = useCallback(
@@ -58,8 +58,8 @@ export function useChatHistory() {
             ]) {
               console.log(`Trying to get token with template: ${templateName}`);
               try {
-                // PARAMETER ISSUE: Change "template" to "templateName"
-                token = await getToken({ templateName });
+                // Use "template" as the property name
+                token = await getToken({ template: templateName });
                 if (token) {
                   console.log(
                     `Successfully got token using template: ${templateName}`,
@@ -223,79 +223,149 @@ export function useChatHistory() {
     }
   }, []);
 
-  // Modified fetchChatHistory with throttling built in
+  // Update the fetchChatHistory function with better error handling
+
   const fetchChatHistory = useCallback(async () => {
     // Don't fetch if not signed in
     if (!isSignedIn) {
       console.log("Not fetching chat history - user not signed in");
-      setChatHistory([]);
-      return;
+      return [];
     }
 
     try {
-      // Set loading state only if this isn't an auto-refresh
       setIsLoading(true);
       setError(null);
+      fetchInProgressRef.current = true;
+      lastFetchTimeRef.current = Date.now();
 
-      console.log("Fetching chat history...");
-      const response = await authFetch("/api/chat-history");
+      console.log("Fetching chat history");
+
+      // Get a fresh token for this request
+      let token;
+      try {
+        // Try multiple template options to ensure we get a token
+        const tokenOptions = [
+          undefined, // Default
+          { template: "default" },
+          { template: "jwt" },
+          { template: "backend" },
+        ];
+
+        for (const option of tokenOptions) {
+          try {
+            token = await getToken(option);
+            if (token) {
+              console.log(
+                `Got token with option: ${JSON.stringify(option) || "default"}`,
+              );
+              break;
+            }
+          } catch (e) {
+            console.warn(
+              `Token attempt failed with option ${JSON.stringify(option) || "default"}:`,
+              e,
+            );
+          }
+        }
+
+        if (!token) {
+          throw new Error("Failed to get token with any method");
+        }
+
+        console.log(
+          `Got token (length: ${token.length}, starts with: ${token.substring(0, 8)}...)`,
+        );
+
+        // Extract clerk_id from token for logging only
+        try {
+          const tokenParts = token.split(".");
+          if (tokenParts.length === 3) {
+            const payloadBase64 = tokenParts[1];
+            // Add padding if needed
+            const padding = payloadBase64.length % 4;
+            const paddedPayload = padding
+              ? payloadBase64 + "=".repeat(4 - padding)
+              : payloadBase64;
+
+            const decodedPayload = JSON.parse(atob(paddedPayload));
+            const clerkId = decodedPayload.sub || "";
+            console.log(`Extracted clerk_id from token: ${clerkId}`);
+          }
+        } catch (e) {
+          console.warn("Could not extract clerk_id from token:", e);
+        }
+      } catch (tokenErr) {
+        console.error("Failed to get token for chat history:", tokenErr);
+        throw new Error("Authentication failed: couldn't get token");
+      }
+
+      // Make the request with explicit headers and custom logging
+      console.log("Making chat history request with fresh token");
+      const requestId = `history-${Date.now()}`;
+
+      // Make the API request
+      const response = await fetch(`/api/chat-history`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "X-Client-Info": "useChatHistory/fetch",
+          "Cache-Control": "no-cache",
+          "X-Request-Id": requestId,
+        },
+      });
+
+      console.log(`Chat history response status: ${response.status}`);
 
       if (!response.ok) {
-        // Save response status for error message
-        const status = response.status;
-        let errorText;
-
+        // Try to read the response as text for error details
+        let errorText = "";
         try {
-          // Clone the response before reading it
-          errorText = await response.clone().text();
-        } catch (textError) {
-          // If we can't read the response text, use a generic message
-          errorText = "Unknown error";
-          console.error("Failed to read error response:", textError);
+          errorText = await response.text();
+        } catch (e) {
+          errorText = "Could not read error response";
         }
 
-        throw new Error(`Failed to fetch chat history: ${status} ${errorText}`);
+        console.error(`Chat history error (${response.status}): ${errorText}`);
+
+        if (response.status === 401) {
+          setError("Authentication failed. Please sign out and sign in again.");
+
+          // Try to run auth diagnostic
+          try {
+            const diagnosticResponse = await fetch("/api/auth-debug", {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            const diagData = await diagnosticResponse.json();
+            console.log("Auth diagnostic:", diagData);
+          } catch (diagError) {
+            console.error("Diagnostic error:", diagError);
+          }
+
+          throw new Error(`Authentication failed: ${response.status}`);
+        } else {
+          throw new Error(`Failed to fetch chat history: ${response.status}`);
+        }
       }
 
-      // Clone the response before parsing
-      const responseClone = response.clone();
-
-      let data;
       try {
-        data = await response.json();
+        const data = await response.json();
+        console.log(`Retrieved ${data.length} chats`);
+        hasInitiallyFetched.current = true;
+        setChatHistory(data);
+        return data;
       } catch (parseError) {
         console.error("Error parsing chat history response:", parseError);
-
-        // Try to log the raw response for debugging
-        try {
-          const rawText = await responseClone.text();
-          console.error("Raw response:", rawText);
-        } catch (e) {
-          console.error("Failed to read raw response");
-        }
-
-        // Set to empty array on parse error
-        data = [];
+        throw new Error("Invalid response format");
       }
-
-      // Ensure we always have an array, even if API returns something else
-      if (Array.isArray(data)) {
-        console.log(`Loaded ${data.length} chats`);
-        setChatHistory(data);
-      } else {
-        console.error("API returned non-array data for chat history:", data);
-        setChatHistory([]);
-      }
-
-      setIsLoading(false);
     } catch (err) {
-      console.error("Error fetching chat history:", err);
+      console.error("Error in fetchChatHistory:", err);
       setError(err instanceof Error ? err.message : "Unknown error");
-      setIsLoading(false);
-      // Ensure we reset to empty array on error
       setChatHistory([]);
+      throw err;
+    } finally {
+      setIsLoading(false);
+      fetchInProgressRef.current = false;
     }
-  }, [authFetch, isSignedIn]);
+  }, [isSignedIn, getToken]);
 
   // Fetch a specific chat by ID with throttling
   const fetchChatDetail = useCallback(
@@ -491,6 +561,81 @@ export function useChatHistory() {
     }
   }, [getToken, isSignedIn]);
 
+  // Add this function to useChatHistory to help diagnose 401 errors
+  const diagnoseChatHistoryFetch = useCallback(async () => {
+    try {
+      // Step 1: Check if we can get a token
+      let token;
+      try {
+        token = await getToken();
+        console.log(
+          `Token acquired (length: ${token ? token.length : 0}, prefix: ${token ? token.substring(0, 5) : "null"}...)`,
+        );
+
+        if (!token) {
+          return { error: "No token available" };
+        }
+      } catch (tokenError) {
+        console.error("Error getting token:", tokenError);
+        return { error: `Token error: ${tokenError}` };
+      }
+
+      // Step 2: Try the auth debug endpoint
+      try {
+        const authDebugResponse = await fetch("/api/auth-debug", {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        const authDebugData = await authDebugResponse.json();
+        console.log("Auth debug data:", authDebugData);
+
+        // Step 3: Try the chat history endpoint with explicit diagnostic headers
+        const chatHistoryResponse = await fetch("/api/chat-history", {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "X-Debug": "true",
+            "X-Client-ID": "diagnostic-tool",
+          },
+        });
+
+        const status = chatHistoryResponse.status;
+        let responseText;
+
+        try {
+          responseText = await chatHistoryResponse.text();
+          // Try to parse as JSON for prettier logging
+          try {
+            const json = JSON.parse(responseText);
+            console.log(`Chat history response (${status}):`, json);
+          } catch (e) {
+            console.log(`Chat history response (${status}): ${responseText}`);
+          }
+        } catch (textError) {
+          console.error("Could not read response text:", textError);
+          responseText = "Could not read response";
+        }
+
+        return {
+          token_info: {
+            length: token.length,
+            prefix: token.substring(0, 10),
+          },
+          auth_debug: authDebugData,
+          chat_history_status: status,
+          chat_history_response: responseText,
+        };
+      } catch (error) {
+        console.error("Diagnostic fetch error:", error);
+        return { error: String(error) };
+      }
+    } catch (overallError) {
+      console.error("Overall diagnostic error:", overallError);
+      return { error: String(overallError) };
+    }
+  }, [getToken]);
+
   // Only fetch once when auth state changes or component mounts
   useEffect(() => {
     if (
@@ -525,6 +670,7 @@ export function useChatHistory() {
     fetchChatHistory,
     fetchChatDetail,
     deleteChat,
-    testAuthentication, // Add this
+    testAuthentication,
+    diagnoseChatHistoryFetch, // Add this
   };
 }

@@ -34,3 +34,5 @@ async def create_collections():
 # Get collections
 db_chat = db.get_collection("chats")
 db_user = db.get_collection("users")
+db_history= db.get_collection("chat_history")
+

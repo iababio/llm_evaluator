@@ -3,98 +3,51 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useUser, useAuth } from "@clerk/nextjs";
-import { CreateMessage, Message, useChat, useCompletion } from "ai/react";
-import { debounce } from "@/utils/helpers";
+import { useChat, useCompletion } from "ai/react";
+import { motion, AnimatePresence } from "framer-motion";
 
-// Components
 import Header from "@/components/chat/Header/Header";
 import LeftSidebar from "@/components/chat/LeftSidebar/LeftSidebar";
 import Editor from "@/components/chat/Editor/Editor";
 import RightSidebar from "@/components/chat/RightSidebar/RightSidebar";
-import { AnalysisProgress } from "@/components/ui/analysis-progress";
+import { Spinner } from "@/components/ui/spinner";
 
-// Hooks
 import useMarkdown from "@/hooks/useMarkdown";
 import useSentimentAnalysis from "@/hooks/useSentimentAnalysis";
 import { useChatHistory } from "@/hooks/useChatHistory";
 import useChatSession from "@/hooks/useChatSession";
-import { Button } from "@/components/ui/button";
-import router from "next/router";
+import { createAuthFetch } from "@/lib/auth";
+import type { Message, CreateMessage } from "ai";
 
-/**
- * Create a fetch function that includes authentication headers
- */
-function createAuthFetch(getToken: () => Promise<string | null>) {
-  return async (input: RequestInfo | URL, init?: RequestInit) => {
-    try {
-      const token = await getToken();
-
-      if (!token) {
-        console.warn("No auth token available for request to:", input);
-        throw new Error("No authentication token available");
-      }
-
-      // Add the authorization header to the request
-      const authInit = {
-        ...init,
-        headers: {
-          ...init?.headers,
-          Authorization: `Bearer ${token}`,
-        },
-      };
-
-      // For debugging
-      if (typeof input === "string" && input.includes("/api/")) {
-        console.log("Making authenticated request to:", input);
-      }
-
-      const response = await fetch(input, authInit);
-
-      // Log failures for debugging
-      if (
-        !response.ok &&
-        typeof input === "string" &&
-        input.includes("/api/")
-      ) {
-        console.error(
-          `Request failed: ${response.status} ${response.statusText}`,
-          input,
-        );
-        try {
-          // Try to parse error response
-          const errorText = await response.text();
-          console.error("Error response:", errorText);
-        } catch (e) {
-          // Ignore parse errors
-        }
-      }
-
-      return response;
-    } catch (error) {
-      console.error("Auth fetch error:", error);
-      // Instead of falling back to unauthenticated request, throw the error
-      throw error;
-    }
-  };
+// This interface is properly typed for use with motion components
+interface MyComponentProps extends React.HTMLAttributes<HTMLDivElement> {
+  initial?: { opacity: number };
+  animate?: { opacity: number };
+  transition?: { duration: number };
+  children?: React.ReactNode;
 }
 
 export default function ChatPage() {
   const { isLoaded, isSignedIn, user } = useUser();
   const { getToken } = useAuth();
+  const router = useRouter();
 
   // Define all state variables at the beginning
   const [showLeftSidebar, setShowLeftSidebar] = useState(true);
   const [showRightSidebar, setShowRightSidebar] = useState(true);
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [authToken, setAuthToken] = useState<string | null>(null);
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState<boolean>(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [tokenAvailable, setTokenAvailable] = useState(false);
   const tokenInitializedRef = useRef(false);
+  const [trackedMessageIds, setTrackedMessageIds] = useState<Set<string>>(
+    new Set(),
+  );
+  const [streamInProgress, setStreamInProgress] = useState(false);
 
   // Chat history hooks
-  const { fetchChatDetail, currentChat, fetchChatHistory } = useChatHistory();
+  const { fetchChatDetail, currentChat } = useChatHistory();
 
   // Add the chat session hook
   const {
@@ -133,6 +86,8 @@ export default function ChatPage() {
     cancelAnalysis,
   } = useSentimentAnalysis();
 
+  // Update the completion hook to properly update the editor content during streaming
+  // Update the completion hook to properly update the editor content during streaming
   const {
     completion,
     complete,
@@ -142,33 +97,56 @@ export default function ChatPage() {
     setCompletion,
   } = useCompletion({
     api: "/api/completion",
-    fetch: authFetch, // Use our custom fetch function
-    headers: authToken ? { Authorization: `Bearer ${authToken}` } : undefined,
-    onResponse: (response) => {
-      console.log("AI response started:", response);
-      setMarkdownContent((prev) => (prev.trim() ? prev + "\n\nAI: " : "AI: "));
-    },
-    onFinish: (completion) => {
-      console.log("AI completion finished:", completion);
-      setMarkdownContent(completion);
+    fetch: authFetch,
+    onStream(streamingCompletion: React.SetStateAction<string>) {
+      console.log("Stream updating in real-time");
 
-      append({
-        role: "assistant",
-        content: completion,
+      // Add detailed logging
+      const before = markdownContent;
+      setMarkdownContent(streamingCompletion);
+
+      // Log to see what's happening with content updates
+      const textString =
+        typeof streamingCompletion === "function"
+          ? streamingCompletion(markdownContent)
+          : streamingCompletion;
+
+      console.log("Stream content updated:", {
+        contentLength: textString.length,
+        contentPreview: textString.substring(textString.length - 30),
       });
 
-      updateWordCount(completion);
+      updateWordCount(textString);
     },
-    onError: (error) => {
-      console.error("AI completion error:", error);
-      setMarkdownContent(
-        (prev) =>
-          prev +
-          "\n\nError connecting to AI service. Please check your backend server.",
-      );
+    onResponse(response) {
+      console.log("AI response started");
+    },
+    onFinish(completion) {
+      console.log("AI completion finished");
+
+      // Only update if content changed - prevent infinite loops
+      if (completion !== markdownContent) {
+        // Use setTimeout to break recursive update cycles
+        setTimeout(() => {
+          setMarkdownContent(completion);
+          updateWordCount(completion);
+
+          // Allow streaming again after a delay
+          setTimeout(() => {
+            setStreamInProgress(false);
+            console.log("Stream completed: allowing new requests");
+          }, 100);
+        }, 0);
+      } else {
+        setStreamInProgress(false);
+      }
+    },
+    onError(error) {
+      console.error("AI error:", error);
+      setStreamInProgress(false); // Reset on error too
     },
   });
-
+  // Also update the chat hook to handle streaming properly
   const {
     messages,
     input,
@@ -182,7 +160,7 @@ export default function ChatPage() {
     stop: stopChat,
   } = useChat({
     api: "/api/chat?protocol=text",
-    fetch: authFetch, // Use our custom fetch function
+    fetch: authFetch,
     headers: authToken ? { Authorization: `Bearer ${authToken}` } : undefined,
     streamProtocol: "text",
     initialMessages: [
@@ -193,6 +171,26 @@ export default function ChatPage() {
           "Welcome to your AI-powered platform, where you can chat, analyze, and gain insights from your documents using this intelligent assistant. Simply type your message below to get started! Whether you need help reviewing text, answering questions, or exploring new ideas, our assistant is here to assist you smoothly and efficiently.",
       },
     ],
+    // Add this crucial handler to see streaming messages
+    onMessage: (message: {
+      role: string;
+      content: React.SetStateAction<string>;
+    }) => {
+      console.log("Message streaming update");
+      if (message.role === "assistant") {
+        // Important: Always set the content without any conditions
+        setMarkdownContent(message.content);
+        // Extract string value before passing to updateWordCount
+        const textContent =
+          typeof message.content === "function"
+            ? message.content(markdownContent)
+            : message.content;
+        updateWordCount(textContent);
+      }
+    },
+    onResponse: (response) => {
+      console.log("Stream message starting");
+    },
     onError: (error) => {
       console.error("Chat error:", error);
       setMarkdownContent(
@@ -200,6 +198,16 @@ export default function ChatPage() {
           prev +
           "\n\nError connecting to chat service. Please check your backend server.",
       );
+      setStreamInProgress(false);
+    },
+    onFinish: (message) => {
+      console.log("Chat completed");
+      // Update the editor content when the message is complete
+      if (message.role === "assistant" && typeof message.content === "string") {
+        setMarkdownContent(message.content);
+        updateWordCount(message.content);
+      }
+      setStreamInProgress(false);
     },
   });
 
@@ -255,8 +263,6 @@ export default function ChatPage() {
         loadSession(currentChat.id, historyMessages.length);
 
         // Reset unsaved changes flag
-        setHasUnsavedChanges(false);
-
         setMessages(historyMessages);
 
         // Set the editor content to the last assistant message
@@ -279,25 +285,35 @@ export default function ChatPage() {
     setWordCount(words);
   };
 
+  // ADD A SINGLE CONSOLIDATED EFFECT (replacing the useEffect at lines ~244-260)
   useEffect(() => {
+    // Skip updates during active streaming
+    if (isCompletionLoading || isChatLoading) return;
+
+    const lastContent = completion || markdownContent;
+
+    // Handle messages updates
     if (messages.length > 0) {
       const lastAssistantMessage = [...messages]
         .filter((m) => m.role === "assistant")
         .pop();
 
-      if (lastAssistantMessage) {
-        setMarkdownContent(lastAssistantMessage.content);
-        updateWordCount(lastAssistantMessage.content);
+      if (lastAssistantMessage && lastAssistantMessage.content) {
+        // Only update if content actually changed to prevent infinite loops
+        if (lastAssistantMessage.content !== markdownContent) {
+          console.log("Updating editor from consolidated effect");
+          setMarkdownContent(lastAssistantMessage.content);
+          updateWordCount(lastAssistantMessage.content);
+        }
       }
     }
-  }, [messages]);
-
-  useEffect(() => {
-    if (completion) {
-      setMarkdownContent(completion);
-      updateWordCount(completion);
-    }
-  }, [completion]);
+  }, [
+    messages,
+    isChatLoading,
+    isCompletionLoading,
+    streamInProgress,
+    completion,
+  ]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -314,41 +330,59 @@ export default function ChatPage() {
   }, []);
 
   const handleSubmitToAI = (text: string) => {
-    if (!text || !text.trim()) {
-      console.warn("Attempted to submit empty text");
+    if (!text || !text.trim() || streamInProgress) {
+      console.warn("Skipping submission: empty text or stream in progress");
       return;
     }
+
+    setStreamInProgress(true);
+    console.log("Stream started: preventing duplicate requests");
+
+    // Generate a unique request ID
+    const requestId = `req_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 7)}`;
 
     // If we're starting a new conversation (no selected chat and no user messages yet)
     if (!selectedChatId && !messages.some((m) => m.role === "user")) {
       startNewSession();
+
+      // Replace the initial welcome message
+      const userMessage: Message = {
+        role: "user",
+        content: text,
+        id: Math.random().toString(36).substring(2, 9),
+      };
+
+      // Set messages first to update UI
+      setMessages([userMessage]);
+
+      // Include the request_id in your API requests
+      complete(text, {
+        body: {
+          request_id: requestId,
+        },
+      });
+    } else {
+      // For existing conversations, include the request_id
+      append(
+        {
+          role: "user",
+          content: text,
+        },
+        {
+          body: {
+            request_id: requestId,
+          },
+        },
+      );
     }
 
-    // Clear selected chat when starting a new conversation from an existing one
-    if (selectedChatId && messages.length > 0) {
+    // Clear selected chat when starting a new conversation
+    if (selectedChatId) {
       setSelectedChatId(null);
       startNewSession();
     }
 
-    // Log auth status for debugging
-    console.log("Submitting with auth token:", authToken ? "yes" : "no");
-    console.log("Session ID:", sessionId);
-    console.log(
-      "Submitting text:",
-      text.substring(0, 50) + (text.length > 50 ? "..." : ""),
-    );
-
-    // Mark changes as unsaved
-    setHasUnsavedChanges(true);
-
-    // Append the user message
-    append({
-      role: "user",
-      content: text,
-    });
-
-    // Use the AI completion service
-    complete(text);
+    console.log(`Request submitted with ID: ${requestId}`);
   };
 
   const handleNewChat = () => {
@@ -382,7 +416,6 @@ export default function ChatPage() {
     );
 
     // Reset unsaved changes flag
-    setHasUnsavedChanges(false);
   };
 
   const analyzeSentiments = (optionalContent?: string) => {
@@ -394,91 +427,9 @@ export default function ChatPage() {
     handleAnalyzeSentiments(contentToAnalyze);
   };
 
-  // Add this custom save function
+  // Remove the custom save function
 
-  const handleSaveChat = async () => {
-    if (!authToken || !messages.length) {
-      console.warn("Cannot save chat - no auth token or empty messages");
-      return;
-    }
-
-    console.log("Manually saving chat...");
-
-    // Set saving state
-    markSessionSaving();
-
-    try {
-      // Try to find the chat-history/save endpoint first
-      let saveUrl = "/api/chat-history/save";
-
-      // Check if the save endpoint exists first
-      const checkResponse = await fetch(saveUrl, {
-        method: "OPTIONS",
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-        },
-      });
-
-      // If OPTIONS fails, try the fallback endpoint
-      if (checkResponse.status === 404) {
-        console.log("Save endpoint not found, trying fallback endpoint");
-        saveUrl = "/api/chat/save"; // Fallback endpoint
-      }
-
-      // Make the actual save request
-      const response = await fetch(saveUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${authToken}`,
-        },
-        body: JSON.stringify({
-          messages: messages,
-          title: currentChat?.title || _extractTitleFromMessages(messages),
-          session_id: sessionId,
-        }),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        console.log("Chat saved with ID:", data.id);
-
-        // Update session saved state
-        markSessionSaved(messages.length);
-        setHasUnsavedChanges(false);
-
-        // If we don't have a selected chat yet, set it
-        if (!selectedChatId) {
-          setSelectedChatId(data.id);
-        }
-
-        // Refresh chat history after saving, but only for new chats
-        if (!currentChat) {
-          // Use setTimeout to avoid immediate re-fetch
-          setTimeout(() => {
-            fetchChatHistory();
-          }, 1000);
-        }
-      } else {
-        // Attempt to read error message
-        let errorMessage = "Unknown error";
-        try {
-          const errorData = await response.text();
-          errorMessage = errorData;
-        } catch (e) {
-          console.error("Could not read error response", e);
-        }
-
-        console.error(
-          `Failed to save chat (${response.status}): ${errorMessage}`,
-        );
-        markSaveFailed();
-      }
-    } catch (error) {
-      console.error("Error saving chat:", error);
-      markSaveFailed();
-    }
-  };
+  // Instead of the handleSaveChat function, replace it with a stub that logs the request
 
   // Helper function to extract title
   const _extractTitleFromMessages = (messages: any[]) => {
@@ -495,39 +446,38 @@ export default function ChatPage() {
   // Update append function to mark changes as unsaved
   const handleAppendMessage = (message: Message | CreateMessage) => {
     append(message);
-    setHasUnsavedChanges(true);
   };
-
-  // Create a debounced save function that persists between renders
-  const debouncedAutoSave = React.useCallback(
-    debounce(
-      async (
-        authToken: string,
-        messages: Message[],
-        handleSaveChat: () => Promise<void>,
-      ) => {
-        if (!authToken || messages.length < 2) return;
-        console.log("Executing debounced auto-save");
-        await handleSaveChat();
-      },
-      3000,
-    ),
-    [], // Empty deps array means this function is created only once
-  );
 
   // Replace your auto-save effect
   useEffect(() => {
-    // Track message changes
+    // Track message changes, but filter out the initial welcome message
     if (messages.length > 0) {
-      trackMessageAdded(messages);
-    }
+      // Filter out the initial welcome message by ID and already tracked messages
+      const newMessages = messages.filter((msg) => {
+        // Skip initial welcome message
+        if (msg.id === "initial") return false;
 
-    // Only auto-save if we have unsaved changes and we're not currently saving
-    if (hasUnsavedChanges && !pendingSave && authToken) {
-      console.log("Scheduling auto-save");
-      debouncedAutoSave(authToken, messages, handleSaveChat);
+        // Skip already tracked messages
+        return !trackedMessageIds.has(msg.id);
+      });
+
+      // Only track if we have new messages to track
+      if (newMessages.length > 0) {
+        // Create a new set of IDs to track
+        const newIds = new Set(newMessages.map((msg) => msg.id));
+
+        // Batch update the tracked IDs
+        setTrackedMessageIds((prev) => {
+          const combined = new Set([...prev]);
+          newMessages.forEach((msg) => combined.add(msg.id));
+          return combined;
+        });
+
+        // Now track the messages
+        trackMessageAdded(newMessages);
+      }
     }
-  }, [hasUnsavedChanges, pendingSave, messages, authToken, debouncedAutoSave]);
+  }, [messages, trackMessageAdded]); // Remove trackedMessageIds from dependencies
 
   // Replace the token effect with this improved version
   useEffect(() => {
@@ -572,109 +522,51 @@ export default function ChatPage() {
     }
   }, [isLoaded, isSignedIn, getToken]);
 
-  // Effect for token initialization
-  useEffect(() => {
-    // Only run token initialization once
-    const initializeAuth = async () => {
-      if (tokenInitializedRef.current) return;
-
-      try {
-        if (isLoaded && isSignedIn && getToken) {
-          console.log("Initializing authentication token");
-
-          try {
-            // First try standard getToken
-            const token = await getToken();
-
-            if (token) {
-              console.log("Successfully obtained auth token");
-              setAuthToken(token);
-              setTokenAvailable(true);
-            } else {
-              console.warn("getToken returned null/undefined");
-              setTokenAvailable(false);
-            }
-          } catch (tokenError) {
-            console.error("Error getting auth token:", tokenError);
-            setTokenAvailable(false);
-          }
-        } else {
-          if (!isLoaded) console.log("Auth not yet loaded");
-          if (!isSignedIn) console.log("User not signed in");
-          setAuthToken(null);
-          setTokenAvailable(false);
-        }
-      } catch (error) {
-        console.error("Error in auth initialization:", error);
-        setTokenAvailable(false);
-      } finally {
-        tokenInitializedRef.current = true;
-      }
-    };
-
-    // Run initialization when auth is loaded
-    if (isLoaded && !tokenInitializedRef.current) {
-      initializeAuth();
-    }
-
-    // Reset token when user signs out
-    if (isLoaded && !isSignedIn && tokenAvailable) {
-      console.log("User signed out, clearing auth token");
-      setAuthToken(null);
-      setTokenAvailable(false);
-    }
-  }, [isLoaded, isSignedIn, getToken, tokenAvailable]);
+  // Define animation variants
+  const pageVariants = {
+    initial: { opacity: 0 },
+    animate: { opacity: 1, transition: { duration: 0.3 } },
+    exit: { opacity: 0, transition: { duration: 0.2 } },
+  };
 
   if (!isLoaded || !isSignedIn) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin h-8 w-8 border-4 border-blue-600 border-t-transparent rounded-full"></div>
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.5 }}
+        >
+          <Spinner size="sm" className="bg-black dark:bg-white" />
+        </motion.div>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col h-screen bg-white">
-      {/* Authentication debug info - remove this in production */}
-      {process.env.NODE_ENV !== "production" && (
-        <div className="bg-yellow-50 border-yellow-200 border-b p-1 text-xs text-yellow-800">
-          Auth: {isSignedIn ? "✅" : "❌"} | Token:{" "}
-          {tokenAvailable ? "✅" : "❌"} | User:{" "}
-          {user?.id ? user.id.substring(0, 8) + "..." : "None"} |
-          {authToken ? (
-            <span className="text-green-700">Token Present</span>
-          ) : (
-            <span className="text-red-700">No Token</span>
-          )}{" "}
-          |
-          <button
-            className="bg-blue-100 hover:bg-blue-200 px-1 py-0.5 rounded ml-1 text-blue-800"
-            onClick={async () => {
-              try {
-                const token = await getToken();
-                alert(
-                  `Token retrieved: ${token ? "Yes" : "No"}\nLength: ${token?.length || 0}`,
-                );
-              } catch (e: any) {
-                alert(`Error getting token: ${e.message}`);
-              }
-            }}
-          >
-            Test Token
-          </button>
-        </div>
-      )}
-
-      {/* Header */}
-      <Header
-        showLeftSidebar={showLeftSidebar}
-        setShowLeftSidebar={setShowLeftSidebar}
-        showRightSidebar={showRightSidebar}
-        setShowRightSidebar={setShowRightSidebar}
-        isEditing={isEditing}
-        setIsEditing={setIsEditing}
-        currentChatTitle={currentChat?.title}
-      />
+    <motion.div
+      className="flex flex-col h-screen bg-white"
+      initial="initial"
+      animate="animate"
+      exit="exit"
+      variants={pageVariants}
+    >
+      {/* Header with animations */}
+      <motion.div
+        initial={{ y: -20, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ duration: 0.3 }}
+      >
+        <Header
+          showLeftSidebar={showLeftSidebar}
+          setShowLeftSidebar={setShowLeftSidebar}
+          showRightSidebar={showRightSidebar}
+          setShowRightSidebar={setShowRightSidebar}
+          isEditing={isEditing}
+          setIsEditing={setIsEditing}
+          currentChatTitle={currentChat?.title}
+        />
+      </motion.div>
 
       {/* Error message */}
       {loadError && (
@@ -701,19 +593,25 @@ export default function ChatPage() {
         />
 
         {/* Document Editor */}
-        <Editor
-          content={markdownContent}
-          setContent={setMarkdownContent}
-          isEditing={isEditing}
-          onChange={handleContentChange}
-          wordCount={wordCount}
-          onAnalyzeSentiment={handleAnalyzeSentiments}
-          isAnalyzing={isAnalyzing}
-          onSubmitToAI={handleSubmitToAI}
-          isAILoading={isCompletionLoading || isChatLoading}
-          onSaveChat={handleSaveChat}
-          hasUnsavedChanges={hasUnsavedChanges}
-        />
+        <motion.div
+          className="flex-1"
+          initial={{ opacity: 0, scale: 0.98 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ delay: 0.1, duration: 0.3 }}
+        >
+          <Editor
+            content={markdownContent}
+            setContent={setMarkdownContent}
+            isEditing={isEditing}
+            onChange={handleContentChange}
+            wordCount={wordCount}
+            onAnalyzeSentiment={handleAnalyzeSentiments}
+            isAnalyzing={isAnalyzing}
+            onSubmitToAI={handleSubmitToAI}
+            isAILoading={isCompletionLoading || isChatLoading}
+            hasUnsavedChanges={false} // Always pass false since we're not tracking changes
+          />
+        </motion.div>
 
         {/* Right Sidebar */}
         <RightSidebar
@@ -727,23 +625,59 @@ export default function ChatPage() {
       </div>
 
       {/* Loading Overlay */}
-      {isAnalyzing && (
-        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
-          {progress ? (
-            <AnalysisProgress
-              percentage={progress.percentage}
-              estimatedTimeRemaining={progress.estimatedTimeRemaining}
-              status={progress.status}
-              onCancel={cancelAnalysis}
-            />
-          ) : (
-            <div className="bg-white p-6 rounded-lg shadow-lg flex items-center gap-4">
-              <div className="animate-spin h-5 w-5 border-4 border-blue-500 border-t-transparent rounded-full"></div>
-              <p>Initializing analysis...</p>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
+      <AnimatePresence>
+        {isAnalyzing && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          >
+            <motion.div
+              initial={{ scale: 0.8, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.8, opacity: 0 }}
+              className="bg-white p-6 rounded-lg shadow-xl flex flex-col items-center"
+            >
+              <div className="mb-4">
+                <div className="animate-spin h-8 w-8 border-4 border-blue-600 border-t-transparent rounded-full"></div>
+              </div>
+              <p className="text-lg font-medium">Analyzing content...</p>
+              <p className="text-sm text-gray-500 mt-1">
+                This may take a moment
+              </p>
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className="mt-4 px-4 py-2 bg-red-100 text-red-700 rounded hover:bg-red-200 transition-colors"
+                onClick={cancelAnalysis}
+              >
+                Cancel
+              </motion.button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Error Toast */}
+      <AnimatePresence>
+        {loadError && (
+          <motion.div
+            initial={{ opacity: 0, y: 50 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 50 }}
+            className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-red-100 text-red-800 px-4 py-3 rounded-lg shadow-lg"
+          >
+            {loadError}
+            <button
+              onClick={() => setLoadError(null)}
+              className="ml-3 text-red-600 hover:text-red-800"
+            >
+              ✕
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
   );
 }

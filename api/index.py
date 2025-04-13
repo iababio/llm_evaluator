@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import json
 import os
 import re
-from api.service.chat_history_service import ensure_chat_history_index, get_user_chat_histories, get_chat_history, delete_chat_history, is_valid_object_id, save_chat_history, update_chat_history, chat_history_collection
+from api.service.chat_history_service import ensure_chat_history_index, get_user_chat_histories, get_chat_history, delete_chat_history, is_valid_object_id
 import asyncio
 from fastapi import FastAPI, Query, HTTPException, Request as FastAPIRequest, BackgroundTasks
 from fastapi.responses import StreamingResponse, JSONResponse
@@ -15,6 +15,7 @@ from api.service.chat_service import stream_text
 from api.service.sentiment_service import analyze_sentiment
 from api.utils.prompt import convert_to_openai_messages
 from api.models.chat_model import Request, CompletionRequest
+from api.middleware.user_middleware import verify_clerk_token
 import httpx
 
 from api.service.user_service import create_or_update_user, ensure_users_index
@@ -42,6 +43,9 @@ from api.routes.debug import router as debug_router
 # Add the new router
 from api.routes.auth import router as auth_router
 
+# Add this import near the top with your other middleware imports
+from api.middleware.direct_auth import direct_auth_middleware
+
 # Create FastAPI app
 app = FastAPI()
 
@@ -53,6 +57,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Then update your middleware registration - add this BEFORE the user_middleware
+app.add_middleware(BaseHTTPMiddleware, dispatch=direct_auth_middleware)
 
 # Add state initialization middleware before user_middleware
 app.add_middleware(BaseHTTPMiddleware, dispatch=state_initialization_middleware)
@@ -78,12 +85,16 @@ async def startup_event():
 
 @app.post("/api/completion")
 async def handle_chat_completion(request: CompletionRequest, protocol: str = Query('data'), request_obj: FastAPIRequest = None):
-    # Extract clerk_id from user - fixed the attribute access
+    # Extract clerk_id from user - with proper null checking
+    print("Handling chat completion request")
     clerk_id = None
-    if hasattr(request_obj, "state") and hasattr(request_obj.state, "user"):
+    if request_obj and hasattr(request_obj, "state") and hasattr(request_obj.state, "user") and request_obj.state.user is not None:
         clerk_id = request_obj.state.user.clerk_id
     
-    print(f"Completion request with clerk_id: {clerk_id}")
+    # Add request ID tracking to prevent duplicates
+    request_id = f"req_{datetime.now().timestamp()}"
+    
+    print(f"Completion request with clerk_id: {clerk_id}, request_id: {request_id}")
     
     if request.prompt:
         openai_messages = [{"role": "user", "content": request.prompt}]
@@ -92,17 +103,18 @@ async def handle_chat_completion(request: CompletionRequest, protocol: str = Que
     else:
         return {"detail": "Either prompt or messages must be provided"}
 
-    response = StreamingResponse(stream_text(openai_messages, protocol, clerk_id))
+    response = StreamingResponse(stream_text(openai_messages, protocol, clerk_id, request_id=request_id))
     response.headers['x-vercel-ai-data-stream'] = 'v1'
+    response.headers['x-request-id'] = request_id
     return response
 
 
 @app.post("/api/chat")
 async def handle_chat_data(request_obj: FastAPIRequest, protocol: str = Query('data')):
     """Handle chat completion requests"""
-    # Extract clerk_id from user
+    # Extract clerk_id from user with proper null checking
     clerk_id = None
-    if hasattr(request_obj, "state") and hasattr(request_obj.state, "user"):
+    if request_obj and hasattr(request_obj, "state") and hasattr(request_obj.state, "user") and request_obj.state.user is not None:
         clerk_id = request_obj.state.user.clerk_id
     
     print(f"Chat request with clerk_id: {clerk_id}")
@@ -113,6 +125,15 @@ async def handle_chat_data(request_obj: FastAPIRequest, protocol: str = Query('d
         body_bytes = await request_obj.body()
         body = json.loads(body_bytes)
         messages = body.get("messages", [])
+        
+        # Add request ID to prevent duplicate processing
+        request_id = body.get("request_id", None)
+        if not request_id:
+            # Generate unique request ID if not provided
+            request_id = f"req_{datetime.now().timestamp()}"
+            print(f"Generated request_id: {request_id}")
+        else:
+            print(f"Using provided request_id: {request_id}")
         
         print(f"Received messages: {len(messages)} items")
         
@@ -136,8 +157,9 @@ async def handle_chat_data(request_obj: FastAPIRequest, protocol: str = Query('d
         print(f"Converted to {len(openai_messages)} OpenAI messages")
         
         # Create streaming response
-        response = StreamingResponse(stream_text(openai_messages, protocol, clerk_id))
+        response = StreamingResponse(stream_text(openai_messages, protocol, clerk_id, request_id=request_id))
         response.headers['x-vercel-ai-data-stream'] = 'v1'
+        response.headers['x-request-id'] = request_id
         return response
         
     except json.JSONDecodeError:
@@ -156,19 +178,47 @@ async def handle_chat_data(request_obj: FastAPIRequest, protocol: str = Query('d
 
 
 @app.post("/api/sentiment")
-async def handle_sentiment_analysis(request: Request):
+async def handle_sentiment_analysis(request: Request, request_obj: FastAPIRequest):
     """
     Analyze sentiments in the provided text and return structured sentiment data.
     This endpoint returns a non-streaming JSON response.
     """
     try:
+        # Extract clerk_id from request state (same as in other endpoints)
+        clerk_id = None
+        
+        # First check for direct auth (from our middleware)
+        direct_auth_user_id = request_obj.headers.get("X-Direct-Auth-User-ID")
+        if direct_auth_user_id:
+            clerk_id = direct_auth_user_id
+            print(f"Using directly authenticated user ID for sentiment: {clerk_id}")
+        elif request_obj and hasattr(request_obj, "state") and hasattr(request_obj.state, "user") and request_obj.state.user is not None:
+            clerk_id = request_obj.state.user.clerk_id
+            print(f"Sentiment analysis request with clerk_id from state: {clerk_id}")
+        else:
+            # Try to extract from token as fallback
+            auth_header = request_obj.headers.get("Authorization")
+            if auth_header and auth_header.startswith("Bearer "):
+                token = auth_header.replace("Bearer ", "")
+                user_data = await verify_clerk_token(token)
+                if "id" in user_data:
+                    clerk_id = user_data["id"]
+                    print(f"Extracted clerk_id {clerk_id} from token for sentiment analysis")
+        
+        # Log auth status for debugging
+        if clerk_id:
+            print(f"Proceeding with sentiment analysis for clerk_id: {clerk_id}")
+        else:
+            print("Warning: No clerk_id available for sentiment analysis")
+        
         messages = request.messages
         openai_messages = convert_to_openai_messages(messages)
         
         # Set a timeout for the entire operation
         try:
+            # Pass the clerk_id to analyze_sentiment
             result = await asyncio.wait_for(
-                analyze_sentiment(openai_messages),
+                analyze_sentiment(openai_messages, clerk_id=clerk_id),
                 timeout=60.0  # 60 second total timeout
             )
             return result
@@ -224,30 +274,60 @@ async def sync_user(user: ClerkUserData, authorization: Optional[str] = Header(N
             content={"success": False, "error": str(e)}
         )
 
+# Update the chat history endpoint
 @app.get("/api/chat-history")
 async def get_user_chat_histories(request_obj: FastAPIRequest):
     """Get chat history for the authenticated user with caching"""
     try:
-        # Ensure request.state exists
-        if not hasattr(request_obj, "state"):
-            print("Request has no state attribute")
+        # Get clerk_id using multiple methods for reliability
+        clerk_id = None
+        
+        # Method 1: Direct auth header
+        direct_auth_user_id = request_obj.headers.get("X-Direct-Auth-User-ID")
+        if direct_auth_user_id:
+            clerk_id = direct_auth_user_id
+            print(f"Using directly authenticated user ID: {clerk_id}")
+        
+        # Method 2: From request state
+        elif hasattr(request_obj, "state") and hasattr(request_obj.state, "user") and request_obj.state.user is not None:
+            clerk_id = request_obj.state.user.clerk_id
+            print(f"Using clerk_id from request state: {clerk_id}")
+        
+        # Method 3: Parse token directly
+        else:
+            auth_header = request_obj.headers.get("Authorization")
+            if auth_header and auth_header.startswith("Bearer "):
+                token = auth_header.replace("Bearer ", "")
+                try:
+                    # Parse JWT directly
+                    parts = token.split('.')
+                    if len(parts) == 3:
+                        payload = parts[1]
+                        # Add padding if needed
+                        padding = len(payload) % 4
+                        if padding:
+                            payload += '=' * (4 - padding)
+                        
+                        decoded = json.loads(base64.urlsafe_b64decode(payload))
+                        
+                        # Find user ID from common claim fields
+                        for field in ["sub", "azp", "user_id", "id"]:
+                            if field in decoded and decoded[field]:
+                                clerk_id = decoded[field]
+                                print(f"Extracted clerk_id {clerk_id} from token")
+                                break
+                except Exception as e:
+                    print(f"Failed to extract clerk_id from token: {e}")
+        
+        if not clerk_id:
             return JSONResponse(
                 status_code=401,
-                content={"error": "Authentication required - No state"}
+                content={"error": "Authentication required - No clerk_id found"}
             )
             
-        # Check if user exists in state
-        if not hasattr(request_obj.state, "user") or request_obj.state.user is None:
-            print("Request has no user in state")
-            return JSONResponse(
-                status_code=401,
-                content={"error": "Authentication required - No user"}
-            )
-        
-        clerk_id = request_obj.state.user.clerk_id
         print(f"Getting chat histories for clerk_id: {clerk_id}")
         
-        # Check if we have a fresh cache
+        # Cache logic
         now = datetime.now()
         if clerk_id in chat_history_cache and clerk_id in chat_history_cache_times:
             cache_age = (now - chat_history_cache_times[clerk_id]).total_seconds()
@@ -265,48 +345,9 @@ async def get_user_chat_histories(request_obj: FastAPIRequest):
         return chat_history_cache[clerk_id]
     except Exception as e:
         print(f"Error fetching chat histories: {str(e)}")
-        import traceback
         traceback.print_exc()
         # Return empty list instead of error to avoid breaking the UI
         return []
-
-@app.get("/api/chat-history/{chat_id}")
-async def get_chat_detail(chat_id: str, request_obj: FastAPIRequest):
-    """Get a specific chat history by ID"""
-    # Check authentication
-    if not hasattr(request_obj, "state") or not hasattr(request_obj.state, "user"):
-        return JSONResponse(
-            status_code=401,
-            content={"error": "Authentication required"}
-        )
-    
-    clerk_id = request_obj.state.user.clerk_id
-    
-    try:
-        # Validate MongoDB ObjectID format
-        if not is_valid_object_id(chat_id):
-            return JSONResponse(
-                status_code=400,
-                content={"error": f"Invalid chat ID format: {chat_id}"}
-            )
-            
-        chat = await get_chat_history(chat_id, clerk_id)
-        
-        if not chat:
-            return JSONResponse(
-                status_code=404,
-                content={"error": f"Chat not found with ID: {chat_id}"}
-            )
-            
-        return chat
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return JSONResponse(
-            status_code=500,
-            content={"error": f"Server error: {str(e)}"}
-        )
-
 
 @app.delete("/api/chat-history/{chat_id}")
 async def delete_chat(chat_id: str, request_obj: FastAPIRequest):
@@ -353,6 +394,166 @@ async def delete_chat(chat_id: str, request_obj: FastAPIRequest):
             content={"error": f"Error: {str(e)}"}
         )
 
+# Add this endpoint for fetching a specific chat
+@app.get("/api/chat-history/{chat_id}")
+async def get_chat_by_id(chat_id: str, request_obj: FastAPIRequest):
+    """Get a specific chat by ID"""
+    try:
+        # Get clerk_id using multiple methods (same as the list endpoint)
+        clerk_id = None
+        
+        # Method 1: Direct auth header
+        direct_auth_user_id = request_obj.headers.get("X-Direct-Auth-User-ID")
+        if direct_auth_user_id:
+            clerk_id = direct_auth_user_id
+        
+        # Method 2: From request state
+        elif hasattr(request_obj, "state") and hasattr(request_obj.state, "user") and request_obj.state.user is not None:
+            clerk_id = request_obj.state.user.clerk_id
+        
+        # Method 3: Parse token directly
+        else:
+            auth_header = request_obj.headers.get("Authorization")
+            if auth_header and auth_header.startswith("Bearer "):
+                token = auth_header.replace("Bearer ", "")
+                try:
+                    parts = token.split('.')
+                    if len(parts) == 3:
+                        payload = parts[1]
+                        padding = len(payload) % 4
+                        if padding:
+                            payload += '=' * (4 - padding)
+                        
+                        decoded = json.loads(base64.urlsafe_b64decode(payload))
+                        
+                        for field in ["sub", "azp", "user_id", "id"]:
+                            if field in decoded and decoded[field]:
+                                clerk_id = decoded[field]
+                                break
+                except Exception as e:
+                    print(f"Failed to extract clerk_id from token: {e}")
+        
+        if not clerk_id:
+            return JSONResponse(
+                status_code=401,
+                content={"error": "Authentication required"}
+            )
+
+        if not is_valid_object_id(chat_id):
+            return JSONResponse(
+                status_code=400,
+                content={"error": "Invalid chat ID format"}
+            )
+            
+        # Get the chat
+        chat = await get_chat_history(chat_id)
+        
+        if not chat:
+            return JSONResponse(
+                status_code=404,
+                content={"error": "Chat not found"}
+            )
+            
+        # Verify the user owns this chat
+        if chat.get("clerk_id") != clerk_id:
+            return JSONResponse(
+                status_code=403,
+                content={"error": "Access denied"}
+            )
+            
+        return chat
+    except Exception as e:
+        print(f"Error fetching chat: {str(e)}")
+        traceback.print_exc()
+        return JSONResponse(
+            status_code=500,
+            content={"error": f"Server error: {str(e)}"}
+        )
+
+# Add this debug endpoint
+@app.get("/api/debug/mongo-status")
+async def check_mongo_status():
+    """Check MongoDB connection status and collection information"""
+    try:
+        from api.db.index import client, db, db_chat
+        
+        # Check connection
+        info = {}
+        
+        try:
+            # Test connection
+            server_info = await client.server_info()
+            info["connection"] = "success"
+            info["version"] = server_info.get("version")
+            
+            # List databases
+            databases = await client.list_database_names()
+            info["databases"] = databases
+            
+            # Check collections
+            collections = await db.list_collection_names()
+            info["collections"] = collections
+            
+            # Check indexes
+            try:
+                indexes = await db_chat.list_indexes().to_list(None)
+                info["chat_indexes"] = [idx["name"] for idx in indexes]
+            except Exception as idx_error:
+                info["chat_indexes_error"] = str(idx_error)
+            
+            # Check document counts
+            try:
+                chat_count = await db_chat.count_documents({})
+                info["chat_count"] = chat_count
+                
+                # Get a sample document
+                if chat_count > 0:
+                    sample = await db_chat.find_one()
+                    if sample:
+                        # Remove potentially sensitive content
+                        if "_id" in sample:
+                            sample["_id"] = str(sample["_id"])
+                        if "messages" in sample:
+                            sample["messages"] = f"[{len(sample['messages'])} messages]"
+                        info["sample_document_structure"] = {k: type(v).__name__ for k, v in sample.items()}
+            except Exception as count_error:
+                info["count_error"] = str(count_error)
+                
+            # Try a test write
+            try:
+                test_doc = {
+                    "test": True,
+                    "timestamp": datetime.now().isoformat(),
+                    "purpose": "connection_test"
+                }
+                test_result = await db.test_connections.insert_one(test_doc)
+                info["test_write"] = "success"
+                info["test_id"] = str(test_result.inserted_id)
+                
+                # Clean up test document
+                await db.test_connections.delete_one({"_id": test_result.inserted_id})
+            except Exception as write_error:
+                info["test_write_error"] = str(write_error)
+            
+            return {
+                "status": "success",
+                "info": info,
+                "timestamp": datetime.now().isoformat()
+            }
+            
+        except Exception as mongo_error:
+            return {
+                "status": "error",
+                "error": str(mongo_error),
+                "traceback": traceback.format_exc()
+            }
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }
+
 # Add this debug endpoint
 @app.get("/api/auth-debug")
 async def debug_auth(request_obj: FastAPIRequest):
@@ -394,93 +595,6 @@ async def debug_auth(request_obj: FastAPIRequest):
     
     return result
 
-# Add this endpoint for manually saving chats
-
-class SaveChatRequest(BaseModel):
-    messages: List[Dict[str, Any]]
-    title: Optional[str] = None
-    session_id: Optional[str] = None  # Add session_id field
-
-@app.post("/api/chat-history/save")
-async def save_chat_manual(request_data: SaveChatRequest, request_obj: FastAPIRequest):
-    """Manually save a chat history"""
-    # Check authentication
-    if not hasattr(request_obj, "state") or not hasattr(request_obj.state, "user"):
-        print("Auth missing for /api/chat-history/save")
-        return JSONResponse(
-            status_code=401,
-            content={"error": "Authentication required"}
-        )
-    
-    clerk_id = request_obj.state.user.clerk_id
-    print(f"Manual save request from clerk_id: {clerk_id}")
-    
-    try:
-        # Check for empty messages
-        if not request_data.messages:
-            return JSONResponse(
-                status_code=400,
-                content={"error": "No messages provided"}
-            )
-        
-        # Determine if we should update an existing chat or create a new one
-        existing_id = None
-        if request_data.session_id:
-            # Look for an existing chat with this session_id in metadata
-            existing_chats = await chat_history_collection.find({
-                "clerk_id": clerk_id,
-                "metadata.client_session_id": request_data.session_id
-            }).to_list(1)
-            
-            if existing_chats:
-                existing_id = str(existing_chats[0]["_id"])
-                print(f"Found existing chat with ID {existing_id} for session {request_data.session_id}")
-            
-        # Create metadata
-        metadata = {}
-        if request_data.session_id:
-            metadata["client_session_id"] = request_data.session_id
-        
-        # Either update or create a new chat
-        if existing_id:
-            # Update existing chat
-            chat_id = await update_chat_history(
-                chat_id=existing_id,
-                clerk_id=clerk_id,
-                messages=request_data.messages,
-                title=request_data.title,
-                metadata=metadata
-            )
-            is_new = False
-        else:
-            # Create new chat
-            chat_id = await save_chat_history(
-                clerk_id=clerk_id,
-                messages=request_data.messages,
-                title=request_data.title,
-                metadata=metadata
-            )
-            is_new = True
-            
-        if chat_id:
-            # Clear the chat history cache for this user
-            if clerk_id in chat_history_cache:
-                del chat_history_cache[clerk_id]
-                
-            return {"id": chat_id, "success": True, "is_new": is_new}
-        else:
-            return JSONResponse(
-                status_code=500,
-                content={"error": "Failed to save chat"}
-            )
-    except Exception as e:
-        traceback.print_exc()
-        return JSONResponse(
-            status_code=500,
-            content={"error": f"Server error: {str(e)}"}
-        )
-
-# Add this debug endpoint
 
 @app.get("/api/debug/chat-manager")
 async def debug_chat_manager(request_obj: FastAPIRequest):
@@ -572,6 +686,56 @@ async def debug_auth(request_obj: FastAPIRequest):
             "error": str(e),
             "timestamp": datetime.now().isoformat()
         }
+# Add this diagnostic endpoint for database connectivity
+
+@app.get("/api/debug/db-status")
+async def check_db_status():
+    """Check database connectivity and collection status"""
+    try:
+        # Check MongoDB connection
+        db_info = {}
+        
+        try:
+            # Test connection by listing databases
+            from api.db.index import client, db
+            databases = await client.list_database_names()
+            db_info["connection"] = "success"
+            db_info["databases"] = databases
+            
+            # Check collections in our database
+            collections = await db.list_collection_names()
+            db_info["collections"] = collections
+            
+            # Try to get a count of documents in chats collection
+            from api.db.index import db_chat
+            chat_count = await db_chat.count_documents({})
+            db_info["chat_count"] = chat_count
+            
+            # Try a sample query
+            sample_chats = await db_chat.find({}).limit(1).to_list(length=1)
+            db_info["has_sample"] = len(sample_chats) > 0
+            
+            return {
+                "status": "ok",
+                "timestamp": datetime.now().isoformat(),
+                "database": db_info
+            }
+            
+        except Exception as db_error:
+            return {
+                "status": "error",
+                "error": str(db_error),
+                "traceback": traceback.format_exc(),
+                "timestamp": datetime.now().isoformat()
+            }
+            
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e),
+            "traceback": traceback.format_exc(),
+            "timestamp": datetime.now().isoformat()
+        }
 
 # Add this after creating the app
 app.include_router(debug_router)
@@ -579,86 +743,59 @@ app.include_router(debug_router)
 # Include the router
 app.include_router(auth_router)
 
-# Add the chat save endpoint
+# Add this endpoint to manually test save functionality
 
-@app.post("/api/chat-history/save")
-async def save_chat(request: FastAPIRequest):
-    """Save a chat history"""
+from api.service.chat_history_service import save_chat_history
+
+class ManualSaveRequest(BaseModel):
+    title: str
+    messages: List[Dict[str, Any]]
+    metadata: Optional[Dict[str, Any]] = None
+
+@app.post("/api/debug/manual-save")
+async def manual_save_chat(request: ManualSaveRequest, request_obj: FastAPIRequest):
+    """Manually save a chat for testing purposes"""
     try:
-        # Ensure state is initialized
-        if not hasattr(request, "state"):
-            print("Request has no state attribute for /api/chat-history/save")
-            return JSONResponse(
-                status_code=401,
-                content={"error": "Authentication required - No state"}
-            )
+        # Check if we have a user
+        if not hasattr(request_obj, "state") or not hasattr(request_obj.state, "user"):
+            # Try to extract from token
+            auth_header = request_obj.headers.get("Authorization")
+            clerk_id = None
+            
+            if auth_header and auth_header.startswith("Bearer "):
+                token = auth_header.replace("Bearer ", "")
+                user_data = await verify_clerk_token(token)
+                if "id" in user_data:
+                    clerk_id = user_data["id"]
+            
+            if not clerk_id:
+                return JSONResponse(
+                    status_code=401,
+                    content={"error": "Authentication required"}
+                )
+        else:
+            clerk_id = request_obj.state.user.clerk_id
         
-        # Ensure user is authenticated
-        if not hasattr(request.state, "user") or request.state.user is None:
-            print("Request has no user in state for /api/chat-history/save")
-            return JSONResponse(
-                status_code=401,
-                content={"error": "Authentication required - No user"}
-            )
-        
-        # Get the request body
-        body = await request.json()
-        
-        # Validate the request body
-        if not isinstance(body, dict):
-            return JSONResponse(
-                status_code=400,
-                content={"error": "Invalid request body - expected object"}
-            )
-        
-        if "messages" not in body or not isinstance(body["messages"], list):
-            return JSONResponse(
-                status_code=400,
-                content={"error": "Missing or invalid 'messages' field"}
-            )
-        
-        # Extract data
-        clerk_id = request.state.user.clerk_id
-        messages = body["messages"]
-        title = body.get("title")
-        session_id = body.get("session_id")
-        
-        print(f"Saving chat for user {clerk_id}")
-        
-        # If you have a service function
-        from api.service.chat_history_service import save_chat_history
-        
-        # Create metadata
-        metadata = {}
-        if session_id:
-            metadata["client_session_id"] = session_id
-        
-        # Save the chat
-        chat_id = await save_chat_history(
+        # Attempt to save
+        result = await save_chat_history(
             clerk_id=clerk_id,
-            messages=messages,
-            title=title,
-            metadata=metadata
+            title=request.title,
+            messages=request.messages,
+            metadata=request.metadata
         )
         
-        if chat_id:
-            return {"id": chat_id, "success": True}
-        else:
-            return JSONResponse(
-                status_code=500,
-                content={"error": "Failed to save chat"}
-            )
+        return {
+            "success": True,
+            "saved_id": str(result.get("_id")) if result and "_id" in result else None,
+            "clerk_id": clerk_id
+        }
+        
     except Exception as e:
-        print(f"Error saving chat: {str(e)}")
-        import traceback
-        traceback.print_exc()
         return JSONResponse(
             status_code=500,
-            content={"error": f"Server error: {str(e)}"}
+            content={
+                "success": False,
+                "error": str(e),
+                "traceback": traceback.format_exc()
+            }
         )
-
-# Add a simpler fallback endpoint as well
-@app.post("/api/chat/save")
-async def save_chat_fallback(request: FastAPIRequest):
-    """Fallback endpoint to save a chat"""
-    return await save_chat(request)

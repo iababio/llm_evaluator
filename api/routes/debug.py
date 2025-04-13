@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request as FastAPIRequest
+from fastapi import APIRouter, Request as FastAPIRequest, Header
 from fastapi.responses import JSONResponse
 from datetime import datetime
 import traceback
@@ -7,8 +7,18 @@ import base64
 import re
 import jwt
 import os
+from typing import Optional
 
-router = APIRouter()
+from api.models.chat_model import Request
+
+# Get Clerk configuration from environment variables
+JWT_VERIFICATION_KEY = os.getenv("CLERK_JWT_VERIFICATION_KEY")
+CLERK_ISSUER = os.getenv("CLERK_ISSUER")
+
+router = APIRouter(
+    prefix="/api/debug",
+    tags=["debug"],
+)
 
 @router.get("/api/debug/auth")
 async def debug_auth(request: FastAPIRequest):
@@ -134,4 +144,77 @@ async def debug_clerk_config():
         return {
             "error": str(e),
             "timestamp": datetime.now().isoformat()
+        }
+
+@router.get("/token-test")
+async def test_token(request: Request, authorization: Optional[str] = Header(None)):
+    """Endpoint to test token parsing and extraction"""
+    try:
+        # For direct testing
+        auth_header = authorization or request.headers.get("Authorization")
+        
+        if not auth_header or not auth_header.startswith("Bearer "):
+            return {
+                "status": "error",
+                "error": "No valid Authorization header found"
+            }
+            
+        token = auth_header.replace("Bearer ", "")
+        
+        # Analyze token
+        result = {
+            "token_length": len(token),
+            "token_prefix": token[:10] + "...",
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        # Parse token
+        parts = token.split('.')
+        if len(parts) != 3:
+            result["error"] = "Not a valid JWT (should have 3 parts)"
+            return result
+            
+        # Decode header
+        header_b64 = parts[0]
+        padding = len(header_b64) % 4
+        if padding:
+            header_b64 += '=' * (4 - padding)
+        header = json.loads(base64.urlsafe_b64decode(header_b64))
+        result["header"] = header
+        
+        # Decode payload
+        payload_b64 = parts[1]
+        padding = len(payload_b64) % 4
+        if padding:
+            payload_b64 += '=' * (4 - padding)
+        payload = json.loads(base64.urlsafe_b64decode(payload_b64))
+        
+        # Filter out potentially sensitive fields
+        filtered_payload = {k: v for k, v in payload.items() 
+                           if k in ["sub", "exp", "iat", "iss", "azp", "aud"]}
+        result["payload"] = filtered_payload
+        
+        # Check for user identifiers
+        user_ids = {}
+        for field in ["sub", "azp", "user_id", "id"]:
+            if field in payload:
+                user_ids[field] = payload[field]
+                
+        result["user_ids"] = user_ids
+        
+        # Check current request state
+        result["request_state"] = {
+            "has_state": hasattr(request, "state"),
+            "has_user": hasattr(request, "state") and hasattr(request.state, "user")
+        }
+        
+        if result["request_state"]["has_user"]:
+            result["request_state"]["clerk_id"] = request.state.user.clerk_id
+        
+        return result
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e),
+            "traceback": traceback.format_exc()
         }

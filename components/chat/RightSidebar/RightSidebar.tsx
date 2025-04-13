@@ -30,84 +30,64 @@ export default function RightSidebar({
   handleAnalyzeSentiments,
 }: RightSidebarProps) {
   // Animation variants
-  const sidebarVariants = {
-    open: {
-      x: 0,
-      width: "500px",
-      opacity: 1,
-      transition: {
-        type: "spring",
-        stiffness: 300,
-        damping: 30,
-      },
-    },
-    closed: {
-      x: "100%",
-      width: 0,
+  const panelVariants = {
+    enter: (direction: number) => ({
+      x: direction > 0 ? 20 : -20,
       opacity: 0,
-      transition: {
-        duration: 0.3,
-      },
+    }),
+    center: {
+      x: 0,
+      opacity: 1,
     },
-  };
-
-  const tabVariants = {
-    active: {
-      borderBottom: "2px solid #2563eb",
-      color: "#2563eb",
-      transition: { duration: 0.3 },
-    },
-    inactive: {
-      borderBottom: "2px solid transparent",
-      color: "#4b5563",
-      transition: { duration: 0.3 },
-    },
+    exit: (direction: number) => ({
+      x: direction < 0 ? 20 : -20,
+      opacity: 0,
+    }),
   };
 
   return (
     <motion.aside
-      variants={sidebarVariants}
-      initial={isVisible ? "open" : "closed"}
-      animate={isVisible ? "open" : "closed"}
+      initial={{ width: 0, opacity: 0, x: "100%" }}
+      animate={{
+        width: isVisible ? 500 : 0,
+        opacity: isVisible ? 1 : 0,
+        x: isVisible ? "0%" : "100%",
+      }}
+      transition={{
+        type: "spring",
+        stiffness: 300,
+        damping: 30,
+      }}
       className="border-l flex flex-col shrink-0 overflow-hidden"
     >
-      {/* Review header with toggle button */}
+      {/* Header with tab switcher */}
       <motion.div
         className="p-4 border-b shrink-0 flex justify-between items-start"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.2 }}
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: isVisible ? 1 : 0, y: isVisible ? 0 : -10 }}
+        transition={{ delay: 0.1 }}
       >
         <div className="flex flex-col gap-2 flex-1">
           <div className="flex gap-2">
             <div className="flex-1 flex items-center gap-2">
-              <motion.span
-                className="font-medium"
-                initial={{ y: -10, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                transition={{ delay: 0.3 }}
-              >
-                Evaluation Analysis
-              </motion.span>
+              <span className="font-medium">Evaluation Analysis</span>
             </div>
           </div>
 
-          {/* Tab Switcher with motion */}
+          {/* Tab Switcher */}
           <div className="flex gap-2 mt-4 border-b">
             <motion.button
-              variants={tabVariants}
-              initial={false}
-              animate={!showSentimentPanel ? "active" : "inactive"}
-              className="pb-2 px-3"
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              className={`pb-2 px-3 transition-colors ${!showSentimentPanel ? "border-b-2 border-blue-600 text-blue-600" : "text-gray-600"}`}
               onClick={() => setShowSentimentPanel(false)}
             >
               Suggestions
             </motion.button>
             <motion.button
-              variants={tabVariants}
-              initial={false}
-              animate={showSentimentPanel ? "active" : "inactive"}
-              className="pb-2 px-2"
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              className={`pb-2 px-2 transition-colors ${showSentimentPanel ? "border-b-2 border-blue-600 text-blue-600" : "text-gray-600"}`}
               onClick={() => setShowSentimentPanel(true)}
               disabled={!sentimentResults}
             >
@@ -117,28 +97,36 @@ export default function RightSidebar({
         </div>
       </motion.div>
 
-      {/* Conditional Content Based on Tab */}
+      {/* Content with animation */}
       <div className="flex-1 overflow-y-auto">
-        <AnimatePresence mode="wait">
+        <AnimatePresence
+          mode="wait"
+          initial={false}
+          custom={showSentimentPanel ? 1 : -1}
+        >
           {showSentimentPanel ? (
             <motion.div
               key="sentiment"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.3 }}
-              className="w-full h-full"
+              custom={1}
+              variants={panelVariants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={{ type: "spring", stiffness: 300, damping: 30 }}
+              className="h-full"
             >
               <SentimentPanel sentimentResults={sentimentResults} />
             </motion.div>
           ) : (
             <motion.div
               key="suggestions"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.3 }}
-              className="w-full h-full"
+              custom={-1}
+              variants={panelVariants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={{ type: "spring", stiffness: 300, damping: 30 }}
+              className="h-full"
             >
               <SuggestionPanel
                 isAnalyzing={isAnalyzing}

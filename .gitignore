@@ -34,7 +34,11 @@ yarn-error.log*
 .env*
 .env.local
 *.pyc
-**.pyc
+*.pyo
+*.pyd
+*.pdb
+*.egg-info
+*.cpython*
 
 # vercel
 .vercel
