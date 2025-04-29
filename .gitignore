@@ -23,6 +23,8 @@
 # misc
 .DS_Store
 *.pem
+*.pyc
+*.cpython-310.pyc
 
 # debug
 npm-debug.log*
