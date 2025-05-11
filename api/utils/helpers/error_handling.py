@@ -134,29 +134,29 @@ async def with_timeout(coro, timeout_seconds: float, operation_name: str = "Oper
 # Error handling decorator
 F = TypeVar('F', bound=Callable[..., Any])
 
-def handle_exceptions(logger_context: Optional[str] = None) -> Callable[[F], F]:
-    """Decorator that catches exceptions and returns appropriate responses."""
-    def decorator(func: F) -> F:
-        @wraps(func)
-        async def async_wrapper(*args, **kwargs):
-            try:
-                return await func(*args, **kwargs)
-            except Exception as exc:
-                context = logger_context or func.__name__
-                log_error(exc, context)
-                return create_error_response(exc)
+# def handle_exceptions(logger_context: Optional[str] = None) -> Callable[[F], F]:
+#     """Decorator that catches exceptions and returns appropriate responses."""
+#     def decorator(func: F) -> F:
+#         @wraps(func)
+#         async def async_wrapper(*args, **kwargs):
+#             try:
+#                 return await func(*args, **kwargs)
+#             except Exception as exc:
+#                 context = logger_context or func.__name__
+#                 log_error(exc, context)
+#                 return create_error_response(exc)
             
-        @wraps(func)
-        def sync_wrapper(*args, **kwargs):
-            try:
-                return func(*args, **kwargs)
-            except Exception as exc:
-                context = logger_context or func.__name__
-                log_error(exc, context)
-                return create_error_response(exc)
+#         @wraps(func)
+#         def sync_wrapper(*args, **kwargs):
+#             try:
+#                 return func(*args, **kwargs)
+#             except Exception as exc:
+#                 context = logger_context or func.__name__
+#                 log_error(exc, context)
+#                 return create_error_response(exc)
         
-        return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
-    return decorator
+#         return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
+#     return decorator
 
 
 def run_async(coroutine):

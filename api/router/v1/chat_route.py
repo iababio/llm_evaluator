@@ -3,8 +3,7 @@ from fastapi.responses import StreamingResponse, JSONResponse
 import asyncio
 import traceback
 import sys
-from api.service.chat_service import stream_text
-from api.service.sentiment_service import analyze_sentiment
+from api.service.unified_service import process_chat_request, process_sentiment_request
 from api.utils.prompt import convert_to_openai_messages
 from api.models.chat_model import Request, CompletionRequest
 
@@ -20,23 +19,23 @@ async def handle_chat_completion(request: CompletionRequest, protocol: str = Que
     else:
         return {"detail": "Either prompt or messages must be provided"}
 
-    response = StreamingResponse(stream_text(openai_messages, protocol, user_id))
+    response = StreamingResponse(await process_chat_request(openai_messages, protocol, user_id))
     response.headers['x-vercel-ai-data-stream'] = 'v1'
     return response
 
 
 @router.post("/api/chat")
-async def handle_chat_data(request: Request, protocol: str = Query('data')):
+async def handle_chat_data(request: Request, protocol: str = Query('data'), user_id: str = Query(None)):
     messages = request.messages
     openai_messages = convert_to_openai_messages(messages)
 
-    response = StreamingResponse(stream_text(openai_messages, protocol))
+    response = StreamingResponse(await process_chat_request(openai_messages, protocol, user_id))
     response.headers['x-vercel-ai-data-stream'] = 'v1'
     return response
 
 
 @router.post("/api/sentiment")
-async def handle_sentiment_analysis(request: Request):
+async def handle_sentiment_analysis(request: Request, user_id: str = Query(None)):
     """
     Analyze sentiments in the provided text and return structured sentiment data.
     This endpoint returns a non-streaming JSON response.
@@ -47,7 +46,7 @@ async def handle_sentiment_analysis(request: Request):
         
         try:
             result = await asyncio.wait_for(
-                analyze_sentiment(openai_messages),
+                process_sentiment_request(openai_messages, user_id),
                 timeout=60.0 
             )
             return result

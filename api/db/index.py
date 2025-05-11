@@ -33,6 +33,11 @@ async def create_collections():
             await db.chat_history.create_index("user_id")
             await db.chat_history.create_index("timestamp")
             
+        if "sentiment" not in collection_names:
+            await db.create_collection("sentiment")
+            await db.sentiment.create_index("user_id")
+            await db.sentiment.create_index("timestamp")
+            
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create collections: {str(e)}")
 
@@ -41,6 +46,7 @@ async def create_indexes():
     """Create necessary indexes for the database"""
     users = db.get_collection("users")
     chat_history = db.get_collection("chat_history")
+    db_sentiment = db.get_collection("sentiment")
     
     await users.create_index("clerk_id", unique=True)
     await users.create_index("email")
@@ -49,6 +55,10 @@ async def create_indexes():
     await chat_history.create_index("created_at")
     await chat_history.create_index("fingerprint")
     await chat_history.create_index([("clerk_id", 1), ("fingerprint", 1), ("created_at", -1)])
+    
+    await db_sentiment.create_index("clerk_id")
+    await db_sentiment.create_index("created_at")
+    await db_sentiment.create_index("fingerprint")
 
 
 async def initialize_database():
@@ -65,3 +75,4 @@ async def initialize_database():
 db_chat = db.get_collection("chats")
 db_user = db.get_collection("users")
 db_history = db.get_collection("chat_history")
+db_sentiment = db.get_collection("sentiment")
